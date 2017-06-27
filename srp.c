@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2015 Dieter Wimberger
  * https://github.com/dwimberger/mbedtls-csrp
- * 
+ *
  * Derived from:
  * Copyright (c) 2010 Tom Cocagne. All rights reserved.
  * https://github.com/cocagne/csrp
@@ -369,8 +369,7 @@ static BIGNUM * calculate_x( SRP_HashAlgorithm alg, const BIGNUM * salt, const c
     HashCTX       ctx;
 
     hash_init( alg, &ctx );
-    hashs_starts( alg, &ctx );
-
+    hash_starts( alg, &ctx );
     hash_update( alg, &ctx, username, strlen(username) );
     hash_update( alg, &ctx, ":", 1 );
     hash_update( alg, &ctx, password, password_len );
@@ -969,12 +968,12 @@ void  srp_user_process_challenge( struct SRPUser * usr,
         mbedtls_mpi_mul_mpi( tmp1, u, x );
         mbedtls_mpi_add_mpi( tmp2, usr->a, tmp1);
         /* tmp2 = (a + ux)      */
-        mbedtls_mpi_exp_mod( tmp1, usr->ng->g, x, usr->ng->N, RR);        
+        mbedtls_mpi_exp_mod( tmp1, usr->ng->g, x, usr->ng->N, RR);
         mbedtls_mpi_mul_mpi( tmp3, k, tmp1 );
         /* tmp3 = k*(g^x)       */
         mbedtls_mpi_sub_mpi(tmp1, B, tmp3);
         /* tmp1 = (B - K*(g^x)) */
-        mbedtls_mpi_exp_mod( usr->S, tmp1, tmp2, usr->ng->N, RR);        
+        mbedtls_mpi_exp_mod( usr->S, tmp1, tmp2, usr->ng->N, RR);
 
         hash_num(usr->hash_alg, usr->S, usr->session_key);
 
