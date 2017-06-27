@@ -1,6 +1,9 @@
 /*
  * Secure Remote Password 6a implementation based on mbedtls.
  *
+ * Copyright (c) 2017 Johannes Schriewer
+ * https://github.com/dunkelstern/mbedtls-csrp
+ *
  * Copyright (c) 2015 Dieter Wimberger
  * https://github.com/dwimberger/mbedtls-csrp
  *
@@ -187,10 +190,10 @@ static void delete_ng( NGConstant * ng )
 {
    if (ng)
    {
-   	  mbedtls_mpi_free( ng->N );
-   	  mbedtls_mpi_free( ng->g );
-   	  free(ng->N);
-   	  free(ng->g);
+      mbedtls_mpi_free( ng->N );
+      mbedtls_mpi_free( ng->g );
+      free(ng->N);
+      free(ng->g);
       free(ng);
    }
 }
@@ -361,8 +364,8 @@ static BIGNUM * H_ns( SRP_HashAlgorithm alg, const BIGNUM * n, const unsigned ch
     hash( alg, bin, nbytes, buff );
     free(bin);
 
-	BIGNUM * bn;
-	bn = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
+    BIGNUM * bn;
+    bn = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
     mbedtls_mpi_init(bn);
     mbedtls_mpi_read_binary( bn, buff, hash_length(alg) );
     return bn;
@@ -374,7 +377,6 @@ static BIGNUM * calculate_x( SRP_HashAlgorithm alg, const BIGNUM * salt, const c
     HashCTX       ctx;
 
     hash_init( alg, &ctx );
-    hash_starts( alg, &ctx );
     hash_update( alg, &ctx, username, strlen(username) );
     hash_update( alg, &ctx, ":", 1 );
     hash_update( alg, &ctx, password, password_len );
@@ -399,7 +401,7 @@ static void hash_num( SRP_HashAlgorithm alg, const BIGNUM * n, unsigned char * d
 {
     int             nbytes = mbedtls_mpi_size(n);
     unsigned char * bin    = (unsigned char *) malloc( nbytes );
-    if(!bin)/B =k
+    if(!bin)
        return;
     mbedtls_mpi_write_binary( n, bin, nbytes );
     hash( alg, bin, nbytes, dest );
@@ -473,9 +475,9 @@ static void init_random()
 };
 
      mbedtls_ctr_drbg_seed(
-     	&ctr_drbg_ctx,
-     	mbedtls_entropy_func,
-     	&entropy_ctx,
+        &ctr_drbg_ctx,
+        mbedtls_entropy_func,
+        &entropy_ctx,
         hotBits,
         128
     );
@@ -523,8 +525,8 @@ void srp_random_seed( const unsigned char * random_data, int data_length )
    if( mbedtls_ctr_drbg_seed( &ctr_drbg_ctx, mbedtls_entropy_func, &entropy_ctx,
                            (const unsigned char *) random_data,
                            data_length )  != 0 )
-	{
-    	return;
+    {
+        return;
     }
 
 }
@@ -543,9 +545,9 @@ void srp_create_salted_verification_key( struct SRPSession *session,
     BIGNUM     * x   = 0;
 
     s = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
-	mbedtls_mpi_init(s);
+    mbedtls_mpi_init(s);
     v = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
-	mbedtls_mpi_init(v);
+    mbedtls_mpi_init(v);
 
     if( !session || !s || !v )
        goto cleanup_and_exit;
@@ -561,7 +563,7 @@ void srp_create_salted_verification_key( struct SRPSession *session,
     if( !x )
        goto cleanup_and_exit;
 
-	mbedtls_mpi_exp_mod(v, session->ng->g, x, session->ng->N, RR);
+    mbedtls_mpi_exp_mod(v, session->ng->g, x, session->ng->N, RR);
 
     *len_s   = mbedtls_mpi_size(s);
     *len_v   = mbedtls_mpi_size(v);
@@ -572,8 +574,8 @@ void srp_create_salted_verification_key( struct SRPSession *session,
     if (!bytes_s || !bytes_v)
        goto cleanup_and_exit;
 
-    mbedtls_mpi_write_binary( s, *bytes_s, *len_s );
-    mbedtls_mpi_write_binary( v, *bytes_v, *len_v );
+    mbedtls_mpi_write_binary( s, (unsigned char *)*bytes_s, *len_s );
+    mbedtls_mpi_write_binary( v, (unsigned char *)*bytes_v, *len_v );
 
  cleanup_and_exit:
     mbedtls_mpi_free(s);
@@ -706,7 +708,7 @@ struct SRPVerifier *  srp_verifier_new( struct SRPSession *session,
           goto cleanup_and_exit;
        }
 
-       mbedtls_mpi_write_binary( B, *bytes_B, *len_B );
+       mbedtls_mpi_write_binary( B, (unsigned char *)*bytes_B, *len_B );
        ver->bytes_B = *bytes_B;
     }
 
@@ -743,7 +745,7 @@ void srp_verifier_delete( struct SRPVerifier * ver )
       delete_ng( ver->ng );
       free( (char *) ver->username );
       if(ver->bytes_B !=0) {
-      	free( (unsigned char *) ver->bytes_B );
+        free( (unsigned char *) ver->bytes_B );
       }
       memset(ver, 0, sizeof(*ver));
       free( ver );
@@ -810,9 +812,9 @@ struct SRPUser * srp_user_new( struct SRPSession *session, const char * username
     usr->A = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
     usr->S = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
 
-	mbedtls_mpi_init(usr->a);
-	mbedtls_mpi_init(usr->A);
-	mbedtls_mpi_init(usr->S);
+    mbedtls_mpi_init(usr->a);
+    mbedtls_mpi_init(usr->A);
+    mbedtls_mpi_init(usr->S);
 
     if (!usr->ng || !usr->a || !usr->A || !usr->S)
        goto err_exit;
@@ -939,30 +941,35 @@ void  srp_user_process_challenge( struct SRPUser * usr,
                                   const unsigned char * bytes_B, int len_B,
                                   const unsigned char ** bytes_M, int * len_M )
 {
-    BIGNUM *s;
-    BIGNUM *B;
     BIGNUM *u    = 0;
     BIGNUM *x    = 0;
     BIGNUM *k    = 0;
-    BIGNUM *v;
-    BIGNUM *tmp1;
-    BIGNUM *tmp2;
-    BIGNUM *tmp3;
 
+    BIGNUM *s;
     s = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
     mbedtls_mpi_init(s);
     mbedtls_mpi_read_binary(s, bytes_s, len_s);
+
+    BIGNUM *B;
     B = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
     mbedtls_mpi_init(B);
     mbedtls_mpi_read_binary(B, bytes_B, len_B);
+
+    BIGNUM *v;
     v = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
- 	mbedtls_mpi_init(v);
- 	tmp1 = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
- 	mbedtls_mpi_init(tmp1);
- 	tmp2 = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
- 	mbedtls_mpi_init(tmp2);
- 	tmp3 = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
- 	mbedtls_mpi_init(tmp3);
+    mbedtls_mpi_init(v);
+
+    BIGNUM *tmp1;
+    tmp1 = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
+    mbedtls_mpi_init(tmp1);
+
+    BIGNUM *tmp2;
+    tmp2 = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
+    mbedtls_mpi_init(tmp2);
+
+    BIGNUM *tmp3;
+    tmp3 = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
+    mbedtls_mpi_init(tmp3);
 
     *len_M = 0;
     *bytes_M = 0;
@@ -991,13 +998,13 @@ void  srp_user_process_challenge( struct SRPUser * usr,
         mbedtls_mpi_exp_mod(v, usr->ng->g, x, usr->ng->N, RR);
         /* S = (B - k*(g^x)) ^ (a + ux) */
         mbedtls_mpi_mul_mpi( tmp1, u, x );
-        mebdtls_mpi_mod( tmp1, tmp1, usr->ng->N);
+        mbedtls_mpi_mod_mpi( tmp1, tmp1, usr->ng->N);
         mbedtls_mpi_add_mpi( tmp2, usr->a, tmp1);
-        mebdtls_mpi_mod( tmp2, tmp2, usr->ng->N);
+        mbedtls_mpi_mod_mpi( tmp2, tmp2, usr->ng->N);
         /* tmp2 = (a + ux)      */
         mbedtls_mpi_exp_mod( tmp1, usr->ng->g, x, usr->ng->N, RR);
         mbedtls_mpi_mul_mpi( tmp3, k, tmp1 );
-        mebdtls_mpi_mod( tmp3, tmp3, usr->ng->N);
+        mbedtls_mpi_mod_mpi( tmp3, tmp3, usr->ng->N);
         /* tmp3 = k*(g^x)       */
         mbedtls_mpi_sub_mpi(tmp1, B, tmp3);
         /* tmp1 = (B - K*(g^x)) */

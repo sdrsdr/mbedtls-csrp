@@ -4,6 +4,9 @@ extern "C" {
 /*
  * Secure Remote Password 6a implementation based on mbedtls.
  *
+ * Copyright (c) 2017 Johannes Schriewer
+ * https://github.com/dunkelstern/mbedtls-csrp
+ *
  * Copyright (c) 2015 Dieter Wimberger
  * https://github.com/dwimberger/mbedtls-csrp
  *
