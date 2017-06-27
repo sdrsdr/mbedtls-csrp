@@ -203,6 +203,11 @@ typedef union
     mbedtls_sha512_context sha512;
 } HashCTX;
 
+struct SRPSession
+{
+    SRP_HashAlgorithm  hash_alg;
+    NGConstant        *ng;
+};
 
 struct SRPVerifier
 {
@@ -488,6 +493,28 @@ static void init_random()
  *
  ***********************************************************************************************************/
 
+struct SRPSession * srp_session_new( SRP_HashAlgorithm alg,
+                                     SRP_NGType ng_type,
+                                     const char * n_hex, const char * g_hex)
+{
+    struct SRPSession * session;
+
+    session = (struct SRPSession *)malloc(sizeof(struct SRPSession));
+    memset(session, 0, sizeof(struct SRPSession));
+
+    session->hash_alg = alg;
+    session->ng  = new_ng( ng_type, n_hex, g_hex );
+
+    return session;
+}
+
+void srp_session_delete(struct SRPSession *session)
+{
+    delete_ng( session->ng );
+    free(session);
+}
+
+
 void srp_random_seed( const unsigned char * random_data, int data_length )
 {
     g_initialized = 1;
@@ -503,12 +530,11 @@ void srp_random_seed( const unsigned char * random_data, int data_length )
 }
 
 
-void srp_create_salted_verification_key( SRP_HashAlgorithm alg,
-                                         SRP_NGType ng_type, const char * username,
+void srp_create_salted_verification_key( struct SRPSession *session,
+                                         const char * username,
                                          const unsigned char * password, int len_password,
                                          const unsigned char ** bytes_s, int * len_s,
-                                         const unsigned char ** bytes_v, int * len_v,
-                                         const char * n_hex, const char * g_hex )
+                                         const unsigned char ** bytes_v, int * len_v)
 {
 
 
@@ -521,9 +547,7 @@ void srp_create_salted_verification_key( SRP_HashAlgorithm alg,
     v = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
 	mbedtls_mpi_init(v);
 
-    NGConstant * ng  = new_ng( ng_type, n_hex, g_hex );
-
-    if( !s || !v || !ng )
+    if( !session || !s || !v )
        goto cleanup_and_exit;
 
     init_random(); /* Only happens once */
@@ -532,13 +556,12 @@ void srp_create_salted_verification_key( SRP_HashAlgorithm alg,
                      &mbedtls_ctr_drbg_random,
                      &ctr_drbg_ctx );
 
-
-    x = calculate_x( alg, s, username, password, len_password );
+    x = calculate_x( session->hash_alg, s, username, password, len_password );
 
     if( !x )
        goto cleanup_and_exit;
 
-	mbedtls_mpi_exp_mod(v, ng->g, x, ng->N, RR);
+	mbedtls_mpi_exp_mod(v, session->ng->g, x, session->ng->N, RR);
 
     *len_s   = mbedtls_mpi_size(s);
     *len_v   = mbedtls_mpi_size(v);
@@ -553,7 +576,6 @@ void srp_create_salted_verification_key( SRP_HashAlgorithm alg,
     mbedtls_mpi_write_binary( v, *bytes_v, *len_v );
 
  cleanup_and_exit:
-    delete_ng( ng );
     mbedtls_mpi_free(s);
     free(s);
     mbedtls_mpi_free(v);
@@ -569,105 +591,108 @@ void srp_create_salted_verification_key( SRP_HashAlgorithm alg,
  *
  * On failure, bytes_B will be set to NULL and len_B will be set to 0
  */
-struct SRPVerifier *  srp_verifier_new( SRP_HashAlgorithm alg, SRP_NGType ng_type, const char * username,
+struct SRPVerifier *  srp_verifier_new( struct SRPSession *session,
+                                        const char *username,
                                         const unsigned char * bytes_s, int len_s,
                                         const unsigned char * bytes_v, int len_v,
                                         const unsigned char * bytes_A, int len_A,
-                                        const unsigned char ** bytes_B, int * len_B,
-                                        const char * n_hex, const char * g_hex )
+                                        const unsigned char ** bytes_B, int * len_B)
 {
 
     BIGNUM *s;
-    BIGNUM *v;
-    BIGNUM *A;
-
-	  s = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
+    s = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
     mbedtls_mpi_init(s);
     mbedtls_mpi_read_binary(s, bytes_s, len_s);
+
+    BIGNUM *v;
     v = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
     mbedtls_mpi_init(v);
     mbedtls_mpi_read_binary(v, bytes_v, len_v);
+
+    BIGNUM *A;
     A = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
     mbedtls_mpi_init(A);
-	  mbedtls_mpi_read_binary(A, bytes_A, len_A);
+    mbedtls_mpi_read_binary(A, bytes_A, len_A);
 
     BIGNUM             *u    = 0;
+
     BIGNUM             *B;
     B = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
     mbedtls_mpi_init(B);
+
     BIGNUM             *S;
     S = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
     mbedtls_mpi_init(S);
+
     BIGNUM             *b;
     b = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
     mbedtls_mpi_init(b);
+
     BIGNUM             *k    = 0;
+
     BIGNUM             *tmp1;
     tmp1 = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
     mbedtls_mpi_init(tmp1);
+
     BIGNUM             *tmp2;
     tmp2 = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
     mbedtls_mpi_init(tmp2);
+
     int                 ulen = strlen(username) + 1;
-    NGConstant         *ng   = new_ng( ng_type, n_hex, g_hex );
+
     struct SRPVerifier *ver  = 0;
+    ver = (struct SRPVerifier *) malloc( sizeof(struct SRPVerifier) );
 
     *len_B   = 0;
     *bytes_B = 0;
 
-    if( !s || !v || !A || !B || !S || !b || !tmp1 || !tmp2 || !ng ) {
+    if( !session || !B || !S || !b || !tmp1 || !tmp2 || !ver ) {
        goto cleanup_and_exit;
     }
 
-    ver = (struct SRPVerifier *) malloc( sizeof(struct SRPVerifier) );
-
-    if (!ver) {
-       goto cleanup_and_exit;
-	}
     init_random(); /* Only happens once */
 
-    ver->username = (char *) malloc( ulen );
-    ver->hash_alg = alg;
-    ver->ng       = ng;
+    ver->hash_alg = session->hash_alg;
+    ver->ng       = session->ng;
 
+    ver->username = (char *) malloc( ulen ); // FIXME
     if (!ver->username)
     {
        free(ver);
        ver = 0;
        goto cleanup_and_exit;
     }
-
     memcpy( (char*)ver->username, username, ulen );
 
     ver->authenticated = 0;
 
     /* SRP-6a safety check */
-    mbedtls_mpi_mod_mpi( tmp1, A, ng->N );
+    mbedtls_mpi_mod_mpi( tmp1, A, session->ng->N );
     if ( mbedtls_mpi_cmp_int( tmp1, 0 )  != 0)
     {
         mbedtls_mpi_fill_random( b, 256,
                      &mbedtls_ctr_drbg_random,
                      &ctr_drbg_ctx );
 
-       k = H_nn(alg, ng->N, ng->g);
+       k = H_nn(session->hash_alg, session->ng->N, session->ng->g);
 
        /* B = kv + g^b */
        mbedtls_mpi_mul_mpi( tmp1, k, v);
-       mbedtls_mpi_exp_mod( tmp2, ng->g, b, ng->N, RR );
+       mbedtls_mpi_exp_mod( tmp2, session->ng->g, b, session->ng->N, RR );
        mbedtls_mpi_add_mpi( tmp1, tmp1, tmp2 );
-       mbedtls_mpi_mod_mpi( B, tmp1, ng->N );
+       mbedtls_mpi_mod_mpi( B, tmp1, session->ng->N );
 
-       u = H_nn(alg, A, B);
+       u = H_nn(session->hash_alg, A, B);
 
        /* S = (A *(v^u)) ^ b */
-       mbedtls_mpi_exp_mod(tmp1, v, u, ng->N, RR);
+       mbedtls_mpi_exp_mod(tmp1, v, u, session->ng->N, RR);
        mbedtls_mpi_mul_mpi(tmp2, A, tmp1);
-       mbedtls_mpi_exp_mod(S, tmp2, b, ng->N, RR);
+       mbedtls_mpi_exp_mod(S, tmp2, b, session->ng->N, RR);
 
-       hash_num(alg, S, ver->session_key);
+       hash_num(session->hash_alg, S, ver->session_key);
 
-       calculate_M( alg, ng, ver->M, username, s, A, B, ver->session_key );
-       calculate_H_AMK( alg, ver->H_AMK, A, ver->M, ver->session_key );
+       calculate_M( session->hash_alg, session->ng, ver->M, username, s, A, B, ver->session_key );
+       calculate_H_AMK( session->hash_alg, ver->H_AMK, A, ver->M, ver->session_key );
 
        *len_B   = mbedtls_mpi_size(B);
        *bytes_B = malloc( *len_B );
@@ -747,7 +772,7 @@ const unsigned char * srp_verifier_get_session_key( struct SRPVerifier * ver, in
 }
 
 
-int                   srp_verifier_get_session_key_length( struct SRPVerifier * ver )
+int srp_verifier_get_session_key_length( struct SRPVerifier * ver )
 {
     return hash_length( ver->hash_alg );
 }
@@ -767,9 +792,8 @@ void srp_verifier_verify_session( struct SRPVerifier * ver, const unsigned char 
 
 /*******************************************************************************/
 
-struct SRPUser * srp_user_new( SRP_HashAlgorithm alg, SRP_NGType ng_type, const char * username,
-                               const unsigned char * bytes_password, int len_password,
-                               const char * n_hex, const char * g_hex )
+struct SRPUser * srp_user_new( struct SRPSession *session, const char * username,
+                               const unsigned char * bytes_password, int len_password)
 {
     struct SRPUser  *usr  = (struct SRPUser *) malloc( sizeof(struct SRPUser) );
     int              ulen = strlen(username) + 1;
@@ -779,8 +803,8 @@ struct SRPUser * srp_user_new( SRP_HashAlgorithm alg, SRP_NGType ng_type, const 
 
     init_random(); /* Only happens once */
 
-    usr->hash_alg = alg;
-    usr->ng       = new_ng( ng_type, n_hex, g_hex );
+    usr->hash_alg = session->hash_alg;
+    usr->ng       = session->ng;
 
     usr->a = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
     usr->A = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
@@ -964,16 +988,16 @@ void  srp_user_process_challenge( struct SRPUser * usr,
     /* SRP-6a safety check */
     if( mbedtls_mpi_cmp_int( B, 0 ) != 0 && mbedtls_mpi_cmp_int( u, 0 ) !=0 )
     {
-	    mbedtls_mpi_exp_mod(v, usr->ng->g, x, usr->ng->N, RR);
+        mbedtls_mpi_exp_mod(v, usr->ng->g, x, usr->ng->N, RR);
         /* S = (B - k*(g^x)) ^ (a + ux) */
         mbedtls_mpi_mul_mpi( tmp1, u, x );
-	mebdtls_mpi_mod( tmp1, tmp1, usr->ng->N);
+        mebdtls_mpi_mod( tmp1, tmp1, usr->ng->N);
         mbedtls_mpi_add_mpi( tmp2, usr->a, tmp1);
-	mebdtls_mpi_mod( tmp2, tmp2, usr->ng->N);
+        mebdtls_mpi_mod( tmp2, tmp2, usr->ng->N);
         /* tmp2 = (a + ux)      */
         mbedtls_mpi_exp_mod( tmp1, usr->ng->g, x, usr->ng->N, RR);
         mbedtls_mpi_mul_mpi( tmp3, k, tmp1 );
-	mebdtls_mpi_mod( tmp3, tmp3, usr->ng->N);
+        mebdtls_mpi_mod( tmp3, tmp3, usr->ng->N);
         /* tmp3 = k*(g^x)       */
         mbedtls_mpi_sub_mpi(tmp1, B, tmp3);
         /* tmp1 = (B - K*(g^x)) */
