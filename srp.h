@@ -85,6 +85,7 @@ typedef enum
 	SRP_NG_768,
     SRP_NG_1024,
     SRP_NG_2048,
+	SRP_NG_3072,
     SRP_NG_4096,
     SRP_NG_8192,
     SRP_NG_CUSTOM
@@ -114,7 +115,7 @@ typedef enum
  *      other platforms.
  */
 void srp_random_seed( const unsigned char * random_data, int data_length );
-
+int srp_random_seeded();
 
 /*
  * The n_hex and g_hex parameters should be 0 unless SRP_NG_CUSTOM is used for ng_type.
