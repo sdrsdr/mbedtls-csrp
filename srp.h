@@ -138,6 +138,16 @@ void srp_create_salted_verification_key( struct SRPSession * session,
                                          const unsigned char ** bytes_v, int * len_v);
 
 
+/* Out: bytes_s,  bytes_v, len_v
+ *
+ * The caller is responsible for freeing the memory allocated for bytes_s and bytes_v
+ */
+void srp_create_salted_verification_key1( struct SRPSession * session,
+                                         const char * username,
+                                         const unsigned char * password, int len_password,
+                                         const unsigned char ** bytes_s, int len_s,
+                                         const unsigned char ** bytes_v, int * len_v);
+
 /* Out: bytes_B, len_B.
  *
  * On failure, bytes_B will be set to NULL and len_B will be set to 0

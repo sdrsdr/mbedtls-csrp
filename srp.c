@@ -551,11 +551,19 @@ void srp_random_seed( const unsigned char * random_data, int data_length )
 
 }
 
-
 void srp_create_salted_verification_key( struct SRPSession *session,
                                          const char * username,
                                          const unsigned char * password, int len_password,
                                          const unsigned char ** bytes_s, int * len_s,
+                                         const unsigned char ** bytes_v, int * len_v)
+{
+	*len_s=32;
+	srp_create_salted_verification_key1(session,username,password,len_password,bytes_s,32,bytes_v,len_v);
+}
+void srp_create_salted_verification_key1( struct SRPSession *session,
+                                         const char * username,
+                                         const unsigned char * password, int len_password,
+                                         const unsigned char ** bytes_s, int  len_s,
                                          const unsigned char ** bytes_v, int * len_v)
 {
 
@@ -574,7 +582,7 @@ void srp_create_salted_verification_key( struct SRPSession *session,
 
     init_random(); /* Only happens once */
 
-    mbedtls_mpi_fill_random( s, 32,
+    mbedtls_mpi_fill_random( s, len_s,
                      &mbedtls_ctr_drbg_random,
                      &ctr_drbg_ctx );
 
@@ -585,16 +593,19 @@ void srp_create_salted_verification_key( struct SRPSession *session,
 
     mbedtls_mpi_exp_mod(v, session->ng->g, x, session->ng->N, RR);
 
-    *len_s   = mbedtls_mpi_size(s);
+    //*len_s   = mbedtls_mpi_size(s);
     *len_v   = mbedtls_mpi_size(v);
 
-    *bytes_s = (const unsigned char *) malloc( *len_s );
+    *bytes_s = (const unsigned char *) malloc( len_s );
     *bytes_v = (const unsigned char *) malloc( *len_v );
 
-    if (!bytes_s || !bytes_v)
-       goto cleanup_and_exit;
+    if (!bytes_s || !bytes_v) {
+        if (bytes_s) free(bytes_s); 
+        if (bytes_v) free(bytes_v); 
+        goto cleanup_and_exit;
+    }
 
-    mbedtls_mpi_write_binary( s, (unsigned char *)*bytes_s, *len_s );
+    mbedtls_mpi_write_binary( s, (unsigned char *)*bytes_s, len_s );
     mbedtls_mpi_write_binary( v, (unsigned char *)*bytes_v, *len_v );
 
  cleanup_and_exit:
