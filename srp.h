@@ -76,6 +76,7 @@ extern "C" {
 #define BIGNUM	mbedtls_mpi
 
 struct SRPSession;
+struct SRPKeyPair;
 struct SRPVerifier;
 struct SRPUser;
 

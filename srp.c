@@ -61,6 +61,8 @@ typedef struct
     BIGNUM     *g;
 } NGConstant;
 
+
+
 struct NGHex
 {
     const char * n_hex;
@@ -212,6 +214,44 @@ static void delete_ng( NGConstant * ng )
       free(ng->N);
       free(ng->g);
       free(ng);
+   }
+}
+
+struct SRPKeyPair {
+    BIGNUM     *B;
+    BIGNUM     *b;
+};
+
+
+static struct SRPKeyPair * new_keypair(struct SRPSession *session){
+	struct SRPKeyPair * keys   = (struct SRPKeyPair *) malloc( sizeof(struct SRPKeyPair) );
+    keys->B = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
+    keys->b = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
+    mbedtls_mpi_init(keys->B);
+    mbedtls_mpi_init(keys->b);
+
+	mbedtls_mpi_fill_random( keys->b, 256,
+                     &mbedtls_ctr_drbg_random,
+                     &ctr_drbg_ctx );
+
+       k = H_nn(session->hash_alg, session->ng->N, session->ng->g);
+
+       /* B = kv + g^b */
+       mbedtls_mpi_mul_mpi( tmp1, k, v);
+       mbedtls_mpi_exp_mod( tmp2, session->ng->g, b, session->ng->N, RR );
+       mbedtls_mpi_add_mpi( tmp1, tmp1, tmp2 );
+       mbedtls_mpi_mod_mpi( B, tmp1, session->ng->N );
+}
+
+static void delete_keypair( struct SRPKeyPair * keys )
+{
+   if (keys)
+   {
+      mbedtls_mpi_free( keys->B );
+      mbedtls_mpi_free( keys->b );
+      free(keys->B);
+      free(keys->b);
+      free(keys);
    }
 }
 
