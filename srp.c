@@ -185,13 +185,18 @@ static struct NGHex global_Ng_constants[] = {
 static NGConstant * new_ng( SRP_NGType ng_type, const char * n_hex, const char * g_hex )
 {
     NGConstant * ng   = (NGConstant *) malloc( sizeof(NGConstant) );
+    if( !ng || !ng->N || !ng->g )
+       return 0;
+
     ng->N = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
     ng->g = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
     mbedtls_mpi_init(ng->N);
     mbedtls_mpi_init(ng->g);
 
-    if( !ng || !ng->N || !ng->g )
-       return 0;
+    if( !ng->N || !ng->g ) {
+		free(ng);
+		return 0;
+	}
 
     if ( ng_type != SRP_NG_CUSTOM )
     {
@@ -201,6 +206,29 @@ static NGConstant * new_ng( SRP_NGType ng_type, const char * n_hex, const char *
 
     mbedtls_mpi_read_string( ng->N, 16, n_hex);
     mbedtls_mpi_read_string( ng->g, 16, g_hex);
+
+    return ng;
+}
+
+static NGConstant * new_ng1( NGConstant * copy_from_ng)
+{
+    NGConstant * ng   = (NGConstant *) malloc( sizeof(NGConstant) );
+    if( !ng ) {
+		return 0;
+	}
+
+    ng->N = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
+    ng->g = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
+
+    if( !ng || !ng->N || !ng->g ) {
+		free(ng);
+		return 0;
+	}
+
+	if(!(mbedtls_mpi_copy(ng->N,copy_from_ng->N)==0  && mbedtls_mpi_copy(ng->g,copy_from_ng->g)==0)){
+		delete_ng(ng);
+		return 0;
+	}
 
     return ng;
 }
@@ -234,13 +262,13 @@ static struct SRPKeyPair * new_keypair(struct SRPSession *session){
                      &mbedtls_ctr_drbg_random,
                      &ctr_drbg_ctx );
 
-       k = H_nn(session->hash_alg, session->ng->N, session->ng->g);
+	k = H_nn(session->hash_alg, session->ng->N, session->ng->g);
 
-       /* B = kv + g^b */
-       mbedtls_mpi_mul_mpi( tmp1, k, v);
-       mbedtls_mpi_exp_mod( tmp2, session->ng->g, b, session->ng->N, RR );
-       mbedtls_mpi_add_mpi( tmp1, tmp1, tmp2 );
-       mbedtls_mpi_mod_mpi( B, tmp1, session->ng->N );
+	/* B = kv + g^b */
+	mbedtls_mpi_mul_mpi( tmp1, k, v);
+	mbedtls_mpi_exp_mod( tmp2, session->ng->g, b, session->ng->N, RR );
+	mbedtls_mpi_add_mpi( tmp1, tmp1, tmp2 );
+	mbedtls_mpi_mod_mpi( B, tmp1, session->ng->N );
 }
 
 static void delete_keypair( struct SRPKeyPair * keys )
@@ -564,6 +592,8 @@ struct SRPSession * srp_session_new( SRP_HashAlgorithm alg,
     session->hash_alg = alg;
     session->ng  = new_ng( ng_type, n_hex, g_hex );
 
+    init_random(); /* Only happens once */
+
     return session;
 }
 
@@ -619,8 +649,6 @@ void srp_create_salted_verification_key1( struct SRPSession *session,
 
     if( !session || !s || !v )
        goto cleanup_and_exit;
-
-    init_random(); /* Only happens once */
 
     mbedtls_mpi_fill_random( s, len_s,
                      &mbedtls_ctr_drbg_random,
@@ -865,19 +893,29 @@ void srp_verifier_verify_session( struct SRPVerifier * ver, const unsigned char 
 
 /*******************************************************************************/
 
-struct SRPUser * srp_user_new( struct SRPSession *session, const char * username,
-                               const unsigned char * bytes_password, int len_password)
-{
+struct SRPUser * srp_user_new(
+	struct SRPSession *session, const char * username,
+	const unsigned char * bytes_password, int len_password
+) {
+	NGConstant *ng=new_ng1(session->ng);
+	if (!ng) return 0;
+	//srp_user_new1 takse ownership of ng
+	return srp_user_new1(session->hash_alg,ng, username,bytes_password,len_password);
+}
+
+//we take wonership of ng here so please don't free in your code
+struct SRPUser * srp_user_new1(
+	SRP_HashAlgorithm  hash_alg, NGConstant *ng,
+	const char * username, const unsigned char * bytes_password, int len_password
+) {
     struct SRPUser  *usr  = (struct SRPUser *) malloc( sizeof(struct SRPUser) );
     int              ulen = strlen(username) + 1;
 
     if (!usr)
        goto err_exit;
 
-    init_random(); /* Only happens once */
-
-    usr->hash_alg = session->hash_alg;
-    usr->ng       = session->ng;
+    usr->hash_alg = hash_alg;
+    usr->ng       = ng;
 
     usr->a = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
     usr->A = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
