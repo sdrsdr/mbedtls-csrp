@@ -75,10 +75,11 @@ extern "C" {
 #define SHA512_DIGEST_LENGTH 64
 #define BIGNUM	mbedtls_mpi
 
-struct SRPSession;
-struct SRPKeyPair;
-struct SRPVerifier;
-struct SRPUser;
+typedef struct SRPSession SRPSession;
+typedef struct SRPKeyPair SRPKeyPair;
+typedef struct SRPVerifier SRPVerifier;
+typedef struct SRPUser SRPUser;
+typedef struct NGConstant NGConstant;
 
 typedef enum
 {
@@ -119,20 +120,37 @@ void srp_random_seed( const unsigned char * random_data, int data_length );
 int srp_random_seeded();
 
 /*
+ * Create internal representation of given SRP_NGType.
+ * if ng_type==SRP_NG_CUSTOM n_hex and g_hex will be used
+ */
+NGConstant * srp_new_ng( SRP_NGType ng_type, const char * n_hex, const char * g_hex );
+
+
+/*
+ * Allocate new NGConstant and copy internal representation of copy_from_ng
+ */
+NGConstant * srp_new_ng1( NGConstant * copy_from_ng);
+
+/*
+ * Free NGConstant. Make sure it is needed as some functions take ownership of passed ng
+ */
+void srp_delete_ng( NGConstant * ng ); 
+
+/*
  * The n_hex and g_hex parameters should be 0 unless SRP_NG_CUSTOM is used for ng_type.
  * If provided, they must contain ASCII text of the hexidecimal notation.
  */
-struct SRPSession * srp_session_new( SRP_HashAlgorithm alg,
+SRPSession * srp_session_new( SRP_HashAlgorithm alg,
                                      SRP_NGType ng_type,
                                      const char * n_hex, const char * g_hex);
 
-void srp_session_delete(struct SRPSession *session);
+void srp_session_delete(SRPSession *session);
 
 /* Out: bytes_s, len_s, bytes_v, len_v
  *
  * The caller is responsible for freeing the memory allocated for bytes_s and bytes_v
  */
-void srp_create_salted_verification_key( struct SRPSession * session,
+void srp_create_salted_verification_key( SRPSession * session,
                                          const char * username,
                                          const unsigned char * password, int len_password,
                                          const unsigned char ** bytes_s, int * len_s,
@@ -143,17 +161,23 @@ void srp_create_salted_verification_key( struct SRPSession * session,
  *
  * The caller is responsible for freeing the memory allocated for bytes_s and bytes_v
  */
-void srp_create_salted_verification_key1( struct SRPSession * session,
+void srp_create_salted_verification_key1( SRPSession * session,
                                          const char * username,
                                          const unsigned char * password, int len_password,
                                          const unsigned char ** bytes_s, int len_s,
                                          const unsigned char ** bytes_v, int * len_v);
 
+
+
+SRPKeyPair * srp_new_keypair(SRPSession *session,const unsigned char * bytes_v, int len_v);
+
+
+
 /* Out: bytes_B, len_B.
  *
  * On failure, bytes_B will be set to NULL and len_B will be set to 0
  */
-struct SRPVerifier *  srp_verifier_new( struct SRPSession * session,
+SRPVerifier *  srp_verifier_new( SRPSession * session,
                                         const char * username,
                                         const unsigned char * bytes_s, int len_s,
                                         const unsigned char * bytes_v, int len_v,
@@ -161,58 +185,67 @@ struct SRPVerifier *  srp_verifier_new( struct SRPSession * session,
                                         const unsigned char ** bytes_B, int * len_B);
 
 
-void                  srp_verifier_delete( struct SRPVerifier * ver );
+void                  srp_verifier_delete( SRPVerifier * ver );
 
 
-int                   srp_verifier_is_authenticated( struct SRPVerifier * ver );
+int                   srp_verifier_is_authenticated( SRPVerifier * ver );
 
 
-const char *          srp_verifier_get_username( struct SRPVerifier * ver );
+const char *          srp_verifier_get_username( SRPVerifier * ver );
 
 /* key_length may be null */
-const unsigned char * srp_verifier_get_session_key( struct SRPVerifier * ver, int * key_length );
+const unsigned char * srp_verifier_get_session_key( SRPVerifier * ver, int * key_length );
 
 
-int                   srp_verifier_get_session_key_length( struct SRPVerifier * ver );
+int                   srp_verifier_get_session_key_length( SRPVerifier * ver );
 
 
 /* user_M must be exactly srp_verifier_get_session_key_length() bytes in size */
-void                  srp_verifier_verify_session( struct SRPVerifier * ver,
+void                  srp_verifier_verify_session( SRPVerifier * ver,
                                                    const unsigned char * user_M,
                                                    const unsigned char ** bytes_HAMK );
 
 /*******************************************************************************/
 
 /* The n_hex and g_hex parameters should be 0 unless SRP_NG_CUSTOM is used for ng_type */
-struct SRPUser *      srp_user_new( struct SRPSession *session,
+SRPUser *      srp_user_new( SRPSession *session,
                                     const char * username,
                                     const unsigned char * bytes_password, int len_password);
 
-void                  srp_user_delete( struct SRPUser * usr );
+/*
+ * will take wonership of ng here so please don't free in your code
+ * using this form you can skip allocating a SRPSession as it is not used in srp_user_*
+ * NGConstant *ng can be allocated via new_ng or new_ng1
+ */
+SRPUser *      srp_user_new1( SRP_HashAlgorithm  hash_alg, NGConstant *ng,
+                                    const char * username,
+                                    const unsigned char * bytes_password, int len_password);
 
-int                   srp_user_is_authenticated( struct SRPUser * usr);
+void                  srp_user_delete( SRPUser * usr );
+
+int                   srp_user_is_authenticated( SRPUser * usr);
 
 
-const char *          srp_user_get_username( struct SRPUser * usr );
+const char *          srp_user_get_username( SRPUser * usr );
 
 /* key_length may be null */
-const unsigned char * srp_user_get_session_key( struct SRPUser * usr, int * key_length );
+const unsigned char * srp_user_get_session_key( SRPUser * usr, int * key_length );
 
-int                   srp_user_get_session_key_length( struct SRPUser * usr );
+int                   srp_user_get_session_key_length( SRPUser * usr );
 
 /* Output: username, bytes_A, len_A */
-void                  srp_user_start_authentication( struct SRPUser * usr, const char ** username,
+void                  srp_user_start_authentication( SRPUser * usr, const char ** username,
                                                      const unsigned char ** bytes_A, int * len_A );
 
 /* Output: bytes_M, len_M  (len_M may be null and will always be
  *                          srp_user_get_session_key_length() bytes in size) */
-void                  srp_user_process_challenge( struct SRPUser * usr,
+void                  srp_user_process_challenge( SRPUser * usr,
                                                   const unsigned char * bytes_s, int len_s,
                                                   const unsigned char * bytes_B, int len_B,
                                                   const unsigned char ** bytes_M, int * len_M );
 
 /* bytes_HAMK must be exactly srp_user_get_session_key_length() bytes in size */
-void                  srp_user_verify_session( struct SRPUser * usr, const unsigned char * bytes_HAMK );
+void                  srp_user_verify_session(SRPUser * usr, const unsigned char * bytes_HAMK );
 
 #endif /* Include Guard */
 #ifdef __cplusplus

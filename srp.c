@@ -55,22 +55,78 @@ static mbedtls_entropy_context entropy_ctx;
 static mbedtls_ctr_drbg_context ctr_drbg_ctx;
 static mbedtls_mpi * RR;
 
-typedef struct
-{
+struct NGConstant {
     BIGNUM     *N;
     BIGNUM     *g;
-} NGConstant;
+} ;
 
 
-
-struct NGHex
-{
+typedef struct NGHex {
     const char * n_hex;
     const char * g_hex;
+} NGHex;
+
+struct SRPKeyPair {
+    BIGNUM     *B;
+    BIGNUM     *b;
 };
 
+typedef union
+{
+    mbedtls_sha1_context   sha;
+    mbedtls_sha256_context sha256;
+    mbedtls_sha512_context sha512;
+} HashCTX;
+
+struct SRPSession
+{
+    SRP_HashAlgorithm  hash_alg;
+    NGConstant   *ng;
+};
+
+struct SRPVerifier
+{
+    SRP_HashAlgorithm  hash_alg;
+    NGConstant  *ng;
+
+    const char          * username;
+    const unsigned char * bytes_B;
+    int                   authenticated;
+
+    unsigned char M           [SHA512_DIGEST_LENGTH];
+    unsigned char H_AMK       [SHA512_DIGEST_LENGTH];
+    unsigned char session_key [SHA512_DIGEST_LENGTH];
+};
+
+
+struct SRPUser
+{
+    SRP_HashAlgorithm  hash_alg;
+    NGConstant  *ng;
+
+    BIGNUM *a;
+    BIGNUM *A;
+    BIGNUM *S;
+
+    const unsigned char * bytes_A;
+    int                   authenticated;
+
+    const char *          username;
+    const unsigned char * password;
+    int                   password_len;
+
+    unsigned char M           [SHA512_DIGEST_LENGTH];
+    unsigned char H_AMK       [SHA512_DIGEST_LENGTH];
+    unsigned char session_key [SHA512_DIGEST_LENGTH];
+};
+
+static BIGNUM * H_nn( SRP_HashAlgorithm alg, const BIGNUM * n1, const BIGNUM * n2 );
+
+
+
+
 /* All constants here were pulled from Appendix A of RFC 5054 */
-static struct NGHex global_Ng_constants[] = {
+static NGHex global_Ng_constants[] = {
  { /* 512 */
   "D66AAFE8E245F9AC245A199F62CE61AB8FA90A4D80C71CD2ADFD0B9DA163B29F2A34AFBDB3B"
   "1B5D0102559CE63D8B6E86B0AA59C14E79D4AA62D1748E4249DF3",
@@ -182,7 +238,7 @@ static struct NGHex global_Ng_constants[] = {
 };
 
 
-static NGConstant * new_ng( SRP_NGType ng_type, const char * n_hex, const char * g_hex )
+NGConstant * new_ng( SRP_NGType ng_type, const char * n_hex, const char * g_hex )
 {
     NGConstant * ng   = (NGConstant *) malloc( sizeof(NGConstant) );
     if( !ng || !ng->N || !ng->g )
@@ -210,7 +266,7 @@ static NGConstant * new_ng( SRP_NGType ng_type, const char * n_hex, const char *
     return ng;
 }
 
-static NGConstant * new_ng1( NGConstant * copy_from_ng)
+NGConstant * new_ng1( NGConstant * copy_from_ng)
 {
     NGConstant * ng   = (NGConstant *) malloc( sizeof(NGConstant) );
     if( !ng ) {
@@ -233,7 +289,7 @@ static NGConstant * new_ng1( NGConstant * copy_from_ng)
     return ng;
 }
 
-static void delete_ng( NGConstant * ng )
+void delete_ng( NGConstant * ng )
 {
    if (ng)
    {
@@ -245,18 +301,50 @@ static void delete_ng( NGConstant * ng )
    }
 }
 
-struct SRPKeyPair {
-    BIGNUM     *B;
-    BIGNUM     *b;
-};
 
 
-static struct SRPKeyPair * new_keypair(struct SRPSession *session){
-	struct SRPKeyPair * keys   = (struct SRPKeyPair *) malloc( sizeof(struct SRPKeyPair) );
+SRPKeyPair * new_keypair(SRPSession *session,const unsigned char * bytes_v, int len_v){
+
+    BIGNUM *k= 0;
+    BIGNUM *tmp1=0;
+    BIGNUM *tmp2=0;
+    BIGNUM *v=0;
+	SRPKeyPair * keys=0;
+
+
+    k = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
+	if (!k) goto cleanup;
+    mbedtls_mpi_init(k);
+
+    tmp1 = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
+	if (!tmp1) goto cleanup;
+    mbedtls_mpi_init(tmp1);
+
+    tmp2 = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
+	if (!tmp1) goto cleanup;
+    mbedtls_mpi_init(tmp2);
+
+    v = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
+	if (!tmp1) goto cleanup;
+    mbedtls_mpi_init(v);
+	if(mbedtls_mpi_read_binary( v, bytes_v, len_v )!=0) goto cleanup;
+
+
+	keys   = (SRPKeyPair *) malloc( sizeof(SRPKeyPair) );
+	if (!keys) goto cleanup;
+
     keys->B = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
     keys->b = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
+	if (keys->B ==0 || keys->b==0){
+		if (keys->B) free (keys->B);
+		if (keys->b) free (keys->b);
+		free(keys);
+		keys=0;
+		goto cleanup;
+	}
     mbedtls_mpi_init(keys->B);
     mbedtls_mpi_init(keys->b);
+
 
 	mbedtls_mpi_fill_random( keys->b, 256,
                      &mbedtls_ctr_drbg_random,
@@ -266,12 +354,34 @@ static struct SRPKeyPair * new_keypair(struct SRPSession *session){
 
 	/* B = kv + g^b */
 	mbedtls_mpi_mul_mpi( tmp1, k, v);
-	mbedtls_mpi_exp_mod( tmp2, session->ng->g, b, session->ng->N, RR );
+	mbedtls_mpi_exp_mod( tmp2, session->ng->g, keys->b, session->ng->N, RR );
 	mbedtls_mpi_add_mpi( tmp1, tmp1, tmp2 );
-	mbedtls_mpi_mod_mpi( B, tmp1, session->ng->N );
+	mbedtls_mpi_mod_mpi( keys->B, tmp1, session->ng->N );
+
+cleanup:
+	if (tmp1) {
+		mbedtls_mpi_free(tmp1);
+		free(tmp1);
+	}
+
+	if (tmp2) {
+		mbedtls_mpi_free(tmp2);
+		free(tmp2);
+	}
+
+	if (v) {
+		mbedtls_mpi_free(v);
+		free(v);
+	}
+
+	if (k) {
+		mbedtls_mpi_free(k);
+		free(k);
+	}
+	return keys;
 }
 
-static void delete_keypair( struct SRPKeyPair * keys )
+static void delete_keypair( SRPKeyPair * keys )
 {
    if (keys)
    {
@@ -283,55 +393,6 @@ static void delete_keypair( struct SRPKeyPair * keys )
    }
 }
 
-
-typedef union
-{
-    mbedtls_sha1_context   sha;
-    mbedtls_sha256_context sha256;
-    mbedtls_sha512_context sha512;
-} HashCTX;
-
-struct SRPSession
-{
-    SRP_HashAlgorithm  hash_alg;
-    NGConstant        *ng;
-};
-
-struct SRPVerifier
-{
-    SRP_HashAlgorithm  hash_alg;
-    NGConstant        *ng;
-
-    const char          * username;
-    const unsigned char * bytes_B;
-    int                   authenticated;
-
-    unsigned char M           [SHA512_DIGEST_LENGTH];
-    unsigned char H_AMK       [SHA512_DIGEST_LENGTH];
-    unsigned char session_key [SHA512_DIGEST_LENGTH];
-};
-
-
-struct SRPUser
-{
-    SRP_HashAlgorithm  hash_alg;
-    NGConstant        *ng;
-
-    BIGNUM *a;
-    BIGNUM *A;
-    BIGNUM *S;
-
-    const unsigned char * bytes_A;
-    int                   authenticated;
-
-    const char *          username;
-    const unsigned char * password;
-    int                   password_len;
-
-    unsigned char M           [SHA512_DIGEST_LENGTH];
-    unsigned char H_AMK       [SHA512_DIGEST_LENGTH];
-    unsigned char session_key [SHA512_DIGEST_LENGTH];
-};
 
 
 static void hash_init( SRP_HashAlgorithm alg, HashCTX *c )
@@ -580,14 +641,14 @@ static void init_random()
  *
  ***********************************************************************************************************/
 
-struct SRPSession * srp_session_new( SRP_HashAlgorithm alg,
+SRPSession * srp_session_new( SRP_HashAlgorithm alg,
                                      SRP_NGType ng_type,
                                      const char * n_hex, const char * g_hex)
 {
-    struct SRPSession * session;
+    SRPSession * session;
 
-    session = (struct SRPSession *)malloc(sizeof(struct SRPSession));
-    memset(session, 0, sizeof(struct SRPSession));
+    session = (SRPSession *)malloc(sizeof(SRPSession));
+    memset(session, 0, sizeof(SRPSession));
 
     session->hash_alg = alg;
     session->ng  = new_ng( ng_type, n_hex, g_hex );
@@ -597,7 +658,7 @@ struct SRPSession * srp_session_new( SRP_HashAlgorithm alg,
     return session;
 }
 
-void srp_session_delete(struct SRPSession *session)
+void srp_session_delete(SRPSession *session)
 {
     delete_ng( session->ng );
     free(session);
@@ -621,7 +682,7 @@ void srp_random_seed( const unsigned char * random_data, int data_length )
 
 }
 
-void srp_create_salted_verification_key( struct SRPSession *session,
+void srp_create_salted_verification_key( SRPSession *session,
                                          const char * username,
                                          const unsigned char * password, int len_password,
                                          const unsigned char ** bytes_s, int * len_s,
@@ -630,7 +691,7 @@ void srp_create_salted_verification_key( struct SRPSession *session,
 	*len_s=32;
 	srp_create_salted_verification_key1(session,username,password,len_password,bytes_s,32,bytes_v,len_v);
 }
-void srp_create_salted_verification_key1( struct SRPSession *session,
+void srp_create_salted_verification_key1( SRPSession *session,
                                          const char * username,
                                          const unsigned char * password, int len_password,
                                          const unsigned char ** bytes_s, int  len_s,
@@ -692,7 +753,7 @@ void srp_create_salted_verification_key1( struct SRPSession *session,
  *
  * On failure, bytes_B will be set to NULL and len_B will be set to 0
  */
-struct SRPVerifier *  srp_verifier_new( struct SRPSession *session,
+SRPVerifier *  srp_verifier_new( SRPSession *session,
                                         const char *username,
                                         const unsigned char * bytes_s, int len_s,
                                         const unsigned char * bytes_v, int len_v,
@@ -741,8 +802,8 @@ struct SRPVerifier *  srp_verifier_new( struct SRPSession *session,
 
     int                 ulen = strlen(username) + 1;
 
-    struct SRPVerifier *ver  = 0;
-    ver = (struct SRPVerifier *) malloc( sizeof(struct SRPVerifier) );
+    SRPVerifier *ver  = 0;
+    ver = (SRPVerifier *) malloc( sizeof(SRPVerifier) );
 
     *len_B   = 0;
     *bytes_B = 0;
@@ -837,7 +898,7 @@ struct SRPVerifier *  srp_verifier_new( struct SRPSession *session,
 
 
 
-void srp_verifier_delete( struct SRPVerifier * ver )
+void srp_verifier_delete( SRPVerifier * ver )
 {
    if (ver)
    {
@@ -853,19 +914,19 @@ void srp_verifier_delete( struct SRPVerifier * ver )
 
 
 
-int srp_verifier_is_authenticated( struct SRPVerifier * ver )
+int srp_verifier_is_authenticated( SRPVerifier * ver )
 {
     return ver->authenticated;
 }
 
 
-const char * srp_verifier_get_username( struct SRPVerifier * ver )
+const char * srp_verifier_get_username( SRPVerifier * ver )
 {
     return ver->username;
 }
 
 
-const unsigned char * srp_verifier_get_session_key( struct SRPVerifier * ver, int * key_length )
+const unsigned char * srp_verifier_get_session_key( SRPVerifier * ver, int * key_length )
 {
     if (key_length)
         *key_length = hash_length( ver->hash_alg );
@@ -873,14 +934,14 @@ const unsigned char * srp_verifier_get_session_key( struct SRPVerifier * ver, in
 }
 
 
-int srp_verifier_get_session_key_length( struct SRPVerifier * ver )
+int srp_verifier_get_session_key_length( SRPVerifier * ver )
 {
     return hash_length( ver->hash_alg );
 }
 
 
 /* user_M must be exactly SHA512_DIGEST_LENGTH bytes in size */
-void srp_verifier_verify_session( struct SRPVerifier * ver, const unsigned char * user_M, const unsigned char ** bytes_HAMK )
+void srp_verifier_verify_session( SRPVerifier * ver, const unsigned char * user_M, const unsigned char ** bytes_HAMK )
 {
     if ( memcmp( ver->M, user_M, hash_length(ver->hash_alg) ) == 0 )
     {
@@ -893,8 +954,8 @@ void srp_verifier_verify_session( struct SRPVerifier * ver, const unsigned char 
 
 /*******************************************************************************/
 
-struct SRPUser * srp_user_new(
-	struct SRPSession *session, const char * username,
+SRPUser * srp_user_new(
+	SRPSession *session, const char * username,
 	const unsigned char * bytes_password, int len_password
 ) {
 	NGConstant *ng=new_ng1(session->ng);
@@ -904,11 +965,11 @@ struct SRPUser * srp_user_new(
 }
 
 //we take wonership of ng here so please don't free in your code
-struct SRPUser * srp_user_new1(
+SRPUser * srp_user_new1(
 	SRP_HashAlgorithm  hash_alg, NGConstant *ng,
 	const char * username, const unsigned char * bytes_password, int len_password
 ) {
-    struct SRPUser  *usr  = (struct SRPUser *) malloc( sizeof(struct SRPUser) );
+    SRPUser  *usr  = (SRPUser *) malloc( sizeof(SRPUser) );
     int              ulen = strlen(username) + 1;
 
     if (!usr)
@@ -965,7 +1026,7 @@ struct SRPUser * srp_user_new1(
 
 
 
-void srp_user_delete( struct SRPUser * usr )
+void srp_user_delete( SRPUser * usr )
 {
    if( usr )
    {
@@ -990,20 +1051,20 @@ void srp_user_delete( struct SRPUser * usr )
 
 
 
-int srp_user_is_authenticated( struct SRPUser * usr)
+int srp_user_is_authenticated( SRPUser * usr)
 {
     return usr->authenticated;
 }
 
 
-const char * srp_user_get_username( struct SRPUser * usr )
+const char * srp_user_get_username( SRPUser * usr )
 {
     return usr->username;
 }
 
 
 
-const unsigned char * srp_user_get_session_key( struct SRPUser * usr, int * key_length )
+const unsigned char * srp_user_get_session_key( SRPUser * usr, int * key_length )
 {
     if (key_length)
         *key_length = hash_length( usr->hash_alg );
@@ -1011,7 +1072,7 @@ const unsigned char * srp_user_get_session_key( struct SRPUser * usr, int * key_
 }
 
 
-int                   srp_user_get_session_key_length( struct SRPUser * usr )
+int                   srp_user_get_session_key_length( SRPUser * usr )
 {
     return hash_length( usr->hash_alg );
 }
@@ -1019,7 +1080,7 @@ int                   srp_user_get_session_key_length( struct SRPUser * usr )
 
 
 /* Output: username, bytes_A, len_A */
-void  srp_user_start_authentication( struct SRPUser * usr, const char ** username,
+void  srp_user_start_authentication( SRPUser * usr, const char ** username,
                                      const unsigned char ** bytes_A, int * len_A )
 {
 
@@ -1045,7 +1106,7 @@ void  srp_user_start_authentication( struct SRPUser * usr, const char ** usernam
 
 
 /* Output: bytes_M. Buffer length is SHA512_DIGEST_LENGTH */
-void  srp_user_process_challenge( struct SRPUser * usr,
+void  srp_user_process_challenge( SRPUser * usr,
                                   const unsigned char * bytes_s, int len_s,
                                   const unsigned char * bytes_B, int len_B,
                                   const unsigned char ** bytes_M, int * len_M )
@@ -1159,7 +1220,7 @@ void  srp_user_process_challenge( struct SRPUser * usr,
 }
 
 
-void srp_user_verify_session( struct SRPUser * usr, const unsigned char * bytes_HAMK )
+void srp_user_verify_session( SRPUser * usr, const unsigned char * bytes_HAMK )
 {
     if ( memcmp( usr->H_AMK, bytes_HAMK, hash_length(usr->hash_alg) ) == 0 )
         usr->authenticated = 1;
