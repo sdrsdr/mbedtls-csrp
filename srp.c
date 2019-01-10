@@ -709,7 +709,8 @@ void srp_create_salted_verification_key1( SRPSession *session,
                                          const unsigned char ** bytes_v, int * len_v)
 {
 
-
+	*bytes_s=NULL;
+	*bytes_v=NULL;
     BIGNUM     * s;
     BIGNUM     * v;
     BIGNUM     * x   = 0;
@@ -739,9 +740,11 @@ void srp_create_salted_verification_key1( SRPSession *session,
     *bytes_s = (const unsigned char *) malloc( len_s );
     *bytes_v = (const unsigned char *) malloc( *len_v );
 
-    if (!bytes_s || !bytes_v) {
-        if (bytes_s) free(bytes_s); 
-        if (bytes_v) free(bytes_v); 
+    if (!*bytes_s || !*bytes_v) {
+        if (*bytes_s) free(*bytes_s); 
+        if (*bytes_v) free(*bytes_v); 
+		*bytes_s=NULL;
+		*bytes_v=NULL;
         goto cleanup_and_exit;
     }
 
@@ -772,24 +775,29 @@ SRPVerifier *  srp_verifier_new( SRPSession *session,
                                         const unsigned char ** bytes_B, int * len_B)
 {
 	return srp_verifier_new1(
-		session,username,bytes_s,len_s,bytes_v,len_v,
+		session,username,1,bytes_s,len_s,bytes_v,len_v,
 		bytes_A,len_A, bytes_B,len_B,
 		NULL
 	);
 }
 
-/* Out: bytes_B, len_B.
+/* Out: bytes_B, len_B if not using SRPKeyPair keys
  *
- * On failure, bytes_B will be set to NULL and len_B will be set to 0, *keys=NULL is ok!
+ * On failure, bytes_B will be set to NULL and len_B will be set to 0, keys=NULL is OK!
+ * bytes_B=NULL is OK 
  */
 SRPVerifier *  srp_verifier_new1( SRPSession *session,
-                                        const char *username,
+                                        const char *username, int copy_username,
                                         const unsigned char * bytes_s, int len_s,
                                         const unsigned char * bytes_v, int len_v,
                                         const unsigned char * bytes_A, int len_A,
                                         const unsigned char ** bytes_B, int * len_B,
                                         SRPKeyPair *keys)
 {
+	if (bytes_B) {
+		*bytes_B=NULL;
+		*len_B=0;
+	}
 
     BIGNUM *s;
     s = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
@@ -824,31 +832,28 @@ SRPVerifier *  srp_verifier_new1( SRPSession *session,
     tmp2 = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
     mbedtls_mpi_init(tmp2);
 
-    int                 ulen = strlen(username) + 1;
 
-    SRPVerifier *ver  = 0;
+    SRPVerifier *ver ;
     ver = (SRPVerifier *) malloc( sizeof(SRPVerifier) );
-	
 
     if( !session || !S || !tmp1 || !tmp2 || !ver ) {
        goto cleanup_and_exit;
     }
 
-    init_random(); /* Only happens once */
-
+	memset(ver,0,sizeof(SRPVerifier));
     ver->hash_alg = session->hash_alg;
     ver->ng       = session->ng;
 
-    ver->username = (char *) malloc( ulen ); // FIXME
-    if (!ver->username)
-    {
-       free(ver);
-       ver = 0;
-       goto cleanup_and_exit;
-    }
-    memcpy( (char*)ver->username, username, ulen );
-
-    ver->authenticated = 0;
+	if (copy_username){
+		int ulen = strlen(username) + 1;
+		ver->username = (char *) malloc( ulen ); // FIXME
+		if (!ver->username) {
+			free(ver);
+			ver = 0;
+			goto cleanup_and_exit;
+		}
+		memcpy( (char*)ver->username, username, ulen );
+	}
 
     /* SRP-6a safety check */
     mbedtls_mpi_mod_mpi( tmp1, A, session->ng->N );
@@ -914,7 +919,7 @@ SRPVerifier *  srp_verifier_new1( SRPSession *session,
 void srp_verifier_delete( SRPVerifier * ver ){
 	if (ver) {
 		srp_delete_ng( ver->ng );
-		free( (char *) ver->username );
+		if (ver->username) free( (char *) ver->username );
 		memset(ver, 0, sizeof(*ver));
 		free( ver );
 	}

@@ -191,7 +191,7 @@ SRPVerifier *  srp_verifier_new( SRPSession * session,
  * On failure, bytes_B will be set to NULL and len_B will be set to 0, *keys=NULL is ok!
  */
 SRPVerifier *  srp_verifier_new1( SRPSession *session,
-                                        const char *username,
+                                        const char *username,  int copy_username,
                                         const unsigned char * bytes_s, int len_s,
                                         const unsigned char * bytes_v, int len_v,
                                         const unsigned char * bytes_A, int len_A,
