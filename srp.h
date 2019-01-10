@@ -168,9 +168,11 @@ void srp_create_salted_verification_key1( SRPSession * session,
                                          const unsigned char ** bytes_v, int * len_v);
 
 
-
-SRPKeyPair * srp_new_keypair(SRPSession *session,const unsigned char * bytes_v, int len_v);
-
+//bytes_B=NULL is ok
+SRPKeyPair * srp_new_keypair( SRPSession *session,const unsigned char * bytes_v, int len_v,
+                              const unsigned char ** bytes_B, int * len_B);
+							  
+void srp_delete_keypair( SRPKeyPair * keys ) ;
 
 
 /* Out: bytes_B, len_B.
@@ -184,6 +186,17 @@ SRPVerifier *  srp_verifier_new( SRPSession * session,
                                         const unsigned char * bytes_A, int len_A,
                                         const unsigned char ** bytes_B, int * len_B);
 
+/* Out: bytes_B, len_B.
+ *
+ * On failure, bytes_B will be set to NULL and len_B will be set to 0, *keys=NULL is ok!
+ */
+SRPVerifier *  srp_verifier_new1( SRPSession *session,
+                                        const char *username,
+                                        const unsigned char * bytes_s, int len_s,
+                                        const unsigned char * bytes_v, int len_v,
+                                        const unsigned char * bytes_A, int len_A,
+                                        const unsigned char ** bytes_B, int * len_B,
+                                        SRPKeyPair *keys);
 
 void                  srp_verifier_delete( SRPVerifier * ver );
 

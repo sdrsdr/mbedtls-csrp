@@ -90,7 +90,6 @@ struct SRPVerifier
     NGConstant  *ng;
 
     const char          * username;
-    const unsigned char * bytes_B;
     int                   authenticated;
 
     unsigned char M           [SHA512_DIGEST_LENGTH];
@@ -238,7 +237,7 @@ static NGHex global_Ng_constants[] = {
 };
 
 
-NGConstant * new_ng( SRP_NGType ng_type, const char * n_hex, const char * g_hex )
+NGConstant * srp_new_ng( SRP_NGType ng_type, const char * n_hex, const char * g_hex )
 {
     NGConstant * ng   = (NGConstant *) malloc( sizeof(NGConstant) );
     if( !ng || !ng->N || !ng->g )
@@ -266,7 +265,7 @@ NGConstant * new_ng( SRP_NGType ng_type, const char * n_hex, const char * g_hex 
     return ng;
 }
 
-NGConstant * new_ng1( NGConstant * copy_from_ng)
+NGConstant * srp_new_ng1( NGConstant * copy_from_ng)
 {
     NGConstant * ng   = (NGConstant *) malloc( sizeof(NGConstant) );
     if( !ng ) {
@@ -282,14 +281,14 @@ NGConstant * new_ng1( NGConstant * copy_from_ng)
 	}
 
 	if(!(mbedtls_mpi_copy(ng->N,copy_from_ng->N)==0  && mbedtls_mpi_copy(ng->g,copy_from_ng->g)==0)){
-		delete_ng(ng);
+		srp_delete_ng(ng);
 		return 0;
 	}
 
     return ng;
 }
 
-void delete_ng( NGConstant * ng )
+void srp_delete_ng( NGConstant * ng )
 {
    if (ng)
    {
@@ -303,7 +302,7 @@ void delete_ng( NGConstant * ng )
 
 
 
-SRPKeyPair * new_keypair(SRPSession *session,const unsigned char * bytes_v, int len_v){
+SRPKeyPair * srp_new_keypair(SRPSession *session,const unsigned char * bytes_v, int len_v, const unsigned char ** bytes_B, int * len_B){
 
     BIGNUM *k= 0;
     BIGNUM *tmp1=0;
@@ -358,6 +357,20 @@ SRPKeyPair * new_keypair(SRPSession *session,const unsigned char * bytes_v, int 
 	mbedtls_mpi_add_mpi( tmp1, tmp1, tmp2 );
 	mbedtls_mpi_mod_mpi( keys->B, tmp1, session->ng->N );
 
+	if (bytes_B) {
+		*len_B   = mbedtls_mpi_size(keys->B);
+		*bytes_B = malloc( *len_B );
+
+		if( !*bytes_B ){
+			if (keys->B) free (keys->B);
+			if (keys->b) free (keys->b);
+			free(keys);
+			keys=0;
+			goto cleanup;
+		}
+		mbedtls_mpi_write_binary( keys->B, (unsigned char *)*bytes_B, *len_B );
+	}
+
 cleanup:
 	if (tmp1) {
 		mbedtls_mpi_free(tmp1);
@@ -381,16 +394,14 @@ cleanup:
 	return keys;
 }
 
-static void delete_keypair( SRPKeyPair * keys )
-{
-   if (keys)
-   {
-      mbedtls_mpi_free( keys->B );
-      mbedtls_mpi_free( keys->b );
-      free(keys->B);
-      free(keys->b);
-      free(keys);
-   }
+void srp_delete_keypair( SRPKeyPair * keys ) {
+	if (keys) {
+		mbedtls_mpi_free( keys->B );
+		mbedtls_mpi_free( keys->b );
+		free(keys->B);
+		free(keys->b);
+		free(keys);
+	}
 }
 
 
@@ -406,7 +417,7 @@ static void hash_init( SRP_HashAlgorithm alg, HashCTX *c )
         return;
     };
 }
-
+/*
 static void hash_start( SRP_HashAlgorithm alg, HashCTX *c )
 {
     switch (alg)
@@ -420,7 +431,7 @@ static void hash_start( SRP_HashAlgorithm alg, HashCTX *c )
         return;
     };
 }
-
+*/
 
 static void hash_update( SRP_HashAlgorithm alg, HashCTX *c, const void *data, size_t len )
 {
@@ -651,7 +662,7 @@ SRPSession * srp_session_new( SRP_HashAlgorithm alg,
     memset(session, 0, sizeof(SRPSession));
 
     session->hash_alg = alg;
-    session->ng  = new_ng( ng_type, n_hex, g_hex );
+    session->ng  = srp_new_ng( ng_type, n_hex, g_hex );
 
     init_random(); /* Only happens once */
 
@@ -660,7 +671,7 @@ SRPSession * srp_session_new( SRP_HashAlgorithm alg,
 
 void srp_session_delete(SRPSession *session)
 {
-    delete_ng( session->ng );
+    srp_delete_ng( session->ng );
     free(session);
 }
 
@@ -760,6 +771,25 @@ SRPVerifier *  srp_verifier_new( SRPSession *session,
                                         const unsigned char * bytes_A, int len_A,
                                         const unsigned char ** bytes_B, int * len_B)
 {
+	return srp_verifier_new1(
+		session,username,bytes_s,len_s,bytes_v,len_v,
+		bytes_A,len_A, bytes_B,len_B,
+		NULL
+	);
+}
+
+/* Out: bytes_B, len_B.
+ *
+ * On failure, bytes_B will be set to NULL and len_B will be set to 0, *keys=NULL is ok!
+ */
+SRPVerifier *  srp_verifier_new1( SRPSession *session,
+                                        const char *username,
+                                        const unsigned char * bytes_s, int len_s,
+                                        const unsigned char * bytes_v, int len_v,
+                                        const unsigned char * bytes_A, int len_A,
+                                        const unsigned char ** bytes_B, int * len_B,
+                                        SRPKeyPair *keys)
+{
 
     BIGNUM *s;
     s = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
@@ -778,19 +808,13 @@ SRPVerifier *  srp_verifier_new( SRPSession *session,
 
     BIGNUM             *u    = 0;
 
-    BIGNUM             *B;
-    B = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
-    mbedtls_mpi_init(B);
 
     BIGNUM             *S;
     S = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
     mbedtls_mpi_init(S);
 
-    BIGNUM             *b;
-    b = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
-    mbedtls_mpi_init(b);
 
-    BIGNUM             *k    = 0;
+    //BIGNUM             *k    = 0;
 
     BIGNUM             *tmp1;
     tmp1 = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
@@ -804,11 +828,9 @@ SRPVerifier *  srp_verifier_new( SRPSession *session,
 
     SRPVerifier *ver  = 0;
     ver = (SRPVerifier *) malloc( sizeof(SRPVerifier) );
+	
 
-    *len_B   = 0;
-    *bytes_B = 0;
-
-    if( !session || !B || !S || !b || !tmp1 || !tmp2 || !ver ) {
+    if( !session || !S || !tmp1 || !tmp2 || !ver ) {
        goto cleanup_and_exit;
     }
 
@@ -832,44 +854,39 @@ SRPVerifier *  srp_verifier_new( SRPSession *session,
     mbedtls_mpi_mod_mpi( tmp1, A, session->ng->N );
     if ( mbedtls_mpi_cmp_int( tmp1, 0 )  != 0)
     {
+		int temp_keys;
+		if (keys==NULL) {
+			temp_keys=1;
+			keys=srp_new_keypair(session,bytes_v,len_v,bytes_B,len_B);
+			if (keys==NULL) goto cleanup_and_exit;
+		} else temp_keys=0;
+		/*
         mbedtls_mpi_fill_random( b, 256,
                      &mbedtls_ctr_drbg_random,
                      &ctr_drbg_ctx );
 
-       k = H_nn(session->hash_alg, session->ng->N, session->ng->g);
+       //k = H_nn(session->hash_alg, session->ng->N, session->ng->g);
 
-       /* B = kv + g^b */
-       mbedtls_mpi_mul_mpi( tmp1, k, v);
-       mbedtls_mpi_exp_mod( tmp2, session->ng->g, b, session->ng->N, RR );
-       mbedtls_mpi_add_mpi( tmp1, tmp1, tmp2 );
-       mbedtls_mpi_mod_mpi( B, tmp1, session->ng->N );
+       // B = kv + g^b 
+       //mbedtls_mpi_mul_mpi( tmp1, k, v);
+       //mbedtls_mpi_exp_mod( tmp2, session->ng->g, b, session->ng->N, RR );
+       //mbedtls_mpi_add_mpi( tmp1, tmp1, tmp2 );
+       //mbedtls_mpi_mod_mpi( B, tmp1, session->ng->N );
+		*/
 
-       u = H_nn(session->hash_alg, A, B);
+       u = H_nn(session->hash_alg, A, keys->B);
 
        /* S = (A *(v^u)) ^ b */
        mbedtls_mpi_exp_mod(tmp1, v, u, session->ng->N, RR);
        mbedtls_mpi_mul_mpi(tmp2, A, tmp1);
-       mbedtls_mpi_exp_mod(S, tmp2, b, session->ng->N, RR);
+       mbedtls_mpi_exp_mod(S, tmp2, keys->b, session->ng->N, RR);
 
        hash_num(session->hash_alg, S, ver->session_key);
 
-       calculate_M( session->hash_alg, session->ng, ver->M, username, s, A, B, ver->session_key );
+       calculate_M( session->hash_alg, session->ng, ver->M, username, s, A, keys->B, ver->session_key );
        calculate_H_AMK( session->hash_alg, ver->H_AMK, A, ver->M, ver->session_key );
 
-       *len_B   = mbedtls_mpi_size(B);
-       *bytes_B = malloc( *len_B );
-
-       if( !*bytes_B )
-       {
-          free( (void*) ver->username );
-          free( ver );
-          ver = 0;
-          *len_B = 0;
-          goto cleanup_and_exit;
-       }
-
-       mbedtls_mpi_write_binary( B, (unsigned char *)*bytes_B, *len_B );
-       ver->bytes_B = *bytes_B;
+		if (temp_keys) srp_delete_keypair(keys);
     }
 
  cleanup_and_exit:
@@ -880,13 +897,9 @@ SRPVerifier *  srp_verifier_new( SRPSession *session,
     mbedtls_mpi_free(A);
     free(A);
     if (u) {mbedtls_mpi_free(u); free(u);}
-    if (k) {mbedtls_mpi_free(k); free(k);}
-    mbedtls_mpi_free(B);
-    free(B);
+
     mbedtls_mpi_free(S);
     free(S);
-    mbedtls_mpi_free(b);
-    free(b);
     mbedtls_mpi_free(tmp1);
     free(tmp1);
     mbedtls_mpi_free(tmp2);
@@ -898,18 +911,13 @@ SRPVerifier *  srp_verifier_new( SRPSession *session,
 
 
 
-void srp_verifier_delete( SRPVerifier * ver )
-{
-   if (ver)
-   {
-      delete_ng( ver->ng );
-      free( (char *) ver->username );
-      if(ver->bytes_B !=0) {
-        free( (unsigned char *) ver->bytes_B );
-      }
-      memset(ver, 0, sizeof(*ver));
-      free( ver );
-   }
+void srp_verifier_delete( SRPVerifier * ver ){
+	if (ver) {
+		srp_delete_ng( ver->ng );
+		free( (char *) ver->username );
+		memset(ver, 0, sizeof(*ver));
+		free( ver );
+	}
 }
 
 
@@ -958,7 +966,7 @@ SRPUser * srp_user_new(
 	SRPSession *session, const char * username,
 	const unsigned char * bytes_password, int len_password
 ) {
-	NGConstant *ng=new_ng1(session->ng);
+	NGConstant *ng=srp_new_ng1(session->ng);
 	if (!ng) return 0;
 	//srp_user_new1 takse ownership of ng
 	return srp_user_new1(session->hash_alg,ng, username,bytes_password,len_password);
@@ -1034,7 +1042,7 @@ void srp_user_delete( SRPUser * usr )
       mbedtls_mpi_free( usr->A );
       mbedtls_mpi_free( usr->S );
 
-      delete_ng( usr->ng );
+      srp_delete_ng( usr->ng );
 
       memset((void*)usr->password, 0, usr->password_len);
 
