@@ -4,6 +4,9 @@ extern "C" {
 /*
  * Secure Remote Password 6a implementation based on mbedtls.
  *
+ * Copyright (c) 2019 Stoian Ivanov
+ * https://github.com/sdrsdr/mbedtls-csrp
+ * 
  * Copyright (c) 2017 Johannes Schriewer
  * https://github.com/dunkelstern/mbedtls-csrp
  *
@@ -213,10 +216,15 @@ const unsigned char * srp_verifier_get_session_key( SRPVerifier * ver, int * key
 int                   srp_verifier_get_session_key_length( SRPVerifier * ver );
 
 
-/* user_M must be exactly srp_verifier_get_session_key_length() bytes in size */
-void                  srp_verifier_verify_session( SRPVerifier * ver,
+/* user_M must be exactly srp_verifier_get_session_key_length() bytes in size 
+ * return 1 if remote provided user_M matches localy calculated
+ * optionally return bytes_HAMK for server to client verify hash
+ */
+int                  srp_verifier_verify_session( SRPVerifier * ver,
                                                    const unsigned char * user_M,
                                                    const unsigned char ** bytes_HAMK );
+/* return bytes_HAMK which is  digest generated with session selected hash */
+const unsigned char * srp_verifier_get_HAMK( SRPVerifier * ver);
 
 /*******************************************************************************/
 

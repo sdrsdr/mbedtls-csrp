@@ -1,6 +1,9 @@
 /*
  * Secure Remote Password 6a implementation based on mbedtls.
  *
+ * Copyright (c) 2019 Stoian Ivanov
+ * https://github.com/sdrsdr/mbedtls-csrp
+ * 
  * Copyright (c) 2017 Johannes Schriewer
  * https://github.com/dunkelstern/mbedtls-csrp
  *
@@ -799,6 +802,8 @@ SRPVerifier *  srp_verifier_new1( SRPSession *session,
 		*len_B=0;
 	}
 
+	if( session==NULL ) return NULL;
+
     BIGNUM *s;
     s = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
     mbedtls_mpi_init(s);
@@ -836,7 +841,8 @@ SRPVerifier *  srp_verifier_new1( SRPSession *session,
     SRPVerifier *ver ;
     ver = (SRPVerifier *) malloc( sizeof(SRPVerifier) );
 
-    if( !session || !S || !tmp1 || !tmp2 || !ver ) {
+    if(!S || !tmp1 || !tmp2 || !ver ) {
+		if (ver) {free(ver); ver=NULL; };
        goto cleanup_and_exit;
     }
 
@@ -953,18 +959,26 @@ int srp_verifier_get_session_key_length( SRPVerifier * ver )
 }
 
 
-/* user_M must be exactly SHA512_DIGEST_LENGTH bytes in size */
-void srp_verifier_verify_session( SRPVerifier * ver, const unsigned char * user_M, const unsigned char ** bytes_HAMK )
+/* user_M,bytes_HAMK are digest generated with session selected hash */
+int srp_verifier_verify_session( SRPVerifier * ver, const unsigned char * user_M, const unsigned char ** bytes_HAMK )
 {
     if ( memcmp( ver->M, user_M, hash_length(ver->hash_alg) ) == 0 )
     {
         ver->authenticated = 1;
-        *bytes_HAMK = ver->H_AMK;
+        if (bytes_HAMK) *bytes_HAMK = ver->H_AMK;
+		return 1
     }
-    else
-        *bytes_HAMK = NULL;
+    else {
+        if (bytes_HAMK) *bytes_HAMK = NULL;
+		return 0;
+	}
 }
 
+/* return bytes_HAMK which is  digest generated with session selected hash */
+const unsigned char * srp_verifier_get_HAMK( SRPVerifier * ver)
+{
+	return ver->H_AMK;
+}
 /*******************************************************************************/
 
 SRPUser * srp_user_new(
