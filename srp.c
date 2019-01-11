@@ -975,8 +975,7 @@ int srp_verifier_verify_session( SRPVerifier * ver, const unsigned char * user_M
 }
 
 /* return bytes_HAMK which is  digest generated with session selected hash */
-const unsigned char * srp_verifier_get_HAMK( SRPVerifier * ver)
-{
+const unsigned char * srp_verifier_get_HAMK( SRPVerifier * ver) {
 	return ver->H_AMK;
 }
 /*******************************************************************************/
