@@ -122,22 +122,23 @@ typedef enum
 void srp_random_seed( const unsigned char * random_data, int data_length );
 int srp_random_seeded();
 
+int srp_hash_length( SRPSession *ses );
+
 /*
  * Create internal representation of given SRP_NGType.
  * if ng_type==SRP_NG_CUSTOM n_hex and g_hex will be used
  */
-NGConstant * srp_new_ng( SRP_NGType ng_type, const char * n_hex, const char * g_hex );
-
+NGConstant * srp_ng_new( SRP_NGType ng_type, const char * n_hex, const char * g_hex );
 
 /*
  * Allocate new NGConstant and copy internal representation of copy_from_ng
  */
-NGConstant * srp_new_ng1( NGConstant * copy_from_ng);
+NGConstant * srp_ng_new1( NGConstant * copy_from_ng);
 
 /*
  * Free NGConstant. Make sure it is needed as some functions take ownership of passed ng
  */
-void srp_delete_ng( NGConstant * ng ); 
+void srp_ng_delete( NGConstant * ng ); 
 
 /*
  * The n_hex and g_hex parameters should be 0 unless SRP_NG_CUSTOM is used for ng_type.
@@ -172,10 +173,10 @@ void srp_create_salted_verification_key1( SRPSession * session,
 
 
 //bytes_B=NULL is ok
-SRPKeyPair * srp_new_keypair( SRPSession *session,const unsigned char * bytes_v, int len_v,
+SRPKeyPair * srp_keypair_new( SRPSession *session,const unsigned char * bytes_v, int len_v,
                               const unsigned char ** bytes_B, int * len_B);
 							  
-void srp_delete_keypair( SRPKeyPair * keys ) ;
+void srp_keypair_delete( SRPKeyPair * keys ) ;
 
 
 /* Out: bytes_B, len_B.

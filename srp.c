@@ -240,7 +240,7 @@ static NGHex global_Ng_constants[] = {
 };
 
 
-NGConstant * srp_new_ng( SRP_NGType ng_type, const char * n_hex, const char * g_hex )
+NGConstant * srp_ng_new( SRP_NGType ng_type, const char * n_hex, const char * g_hex )
 {
     NGConstant * ng   = (NGConstant *) malloc( sizeof(NGConstant) );
     if( !ng || !ng->N || !ng->g )
@@ -268,7 +268,7 @@ NGConstant * srp_new_ng( SRP_NGType ng_type, const char * n_hex, const char * g_
     return ng;
 }
 
-NGConstant * srp_new_ng1( NGConstant * copy_from_ng)
+NGConstant * srp_ng_new1( NGConstant * copy_from_ng)
 {
     NGConstant * ng   = (NGConstant *) malloc( sizeof(NGConstant) );
     if( !ng ) {
@@ -284,14 +284,14 @@ NGConstant * srp_new_ng1( NGConstant * copy_from_ng)
 	}
 
 	if(!(mbedtls_mpi_copy(ng->N,copy_from_ng->N)==0  && mbedtls_mpi_copy(ng->g,copy_from_ng->g)==0)){
-		srp_delete_ng(ng);
+		srp_ng_delete(ng);
 		return 0;
 	}
 
     return ng;
 }
 
-void srp_delete_ng( NGConstant * ng )
+void srp_ng_delete( NGConstant * ng )
 {
    if (ng)
    {
@@ -305,7 +305,7 @@ void srp_delete_ng( NGConstant * ng )
 
 
 
-SRPKeyPair * srp_new_keypair(SRPSession *session,const unsigned char * bytes_v, int len_v, const unsigned char ** bytes_B, int * len_B){
+SRPKeyPair * srp_keypair_new(SRPSession *session,const unsigned char * bytes_v, int len_v, const unsigned char ** bytes_B, int * len_B){
 
     BIGNUM *k= 0;
     BIGNUM *tmp1=0;
@@ -397,7 +397,7 @@ cleanup:
 	return keys;
 }
 
-void srp_delete_keypair( SRPKeyPair * keys ) {
+void srp_keypair_delete( SRPKeyPair * keys ) {
 	if (keys) {
 		mbedtls_mpi_free( keys->B );
 		mbedtls_mpi_free( keys->b );
@@ -488,7 +488,9 @@ static int hash_length( SRP_HashAlgorithm alg )
         return -1;
     };
 }
-
+int srp_hash_length( SRPSession *ses ) {
+	return hash_length(ses->hash_alg);
+}
 
 static BIGNUM * H_nn( SRP_HashAlgorithm alg, const BIGNUM * n1, const BIGNUM * n2 )
 {
@@ -665,7 +667,7 @@ SRPSession * srp_session_new( SRP_HashAlgorithm alg,
     memset(session, 0, sizeof(SRPSession));
 
     session->hash_alg = alg;
-    session->ng  = srp_new_ng( ng_type, n_hex, g_hex );
+    session->ng  = srp_ng_new( ng_type, n_hex, g_hex );
 
     init_random(); /* Only happens once */
 
@@ -674,7 +676,7 @@ SRPSession * srp_session_new( SRP_HashAlgorithm alg,
 
 void srp_session_delete(SRPSession *session)
 {
-    srp_delete_ng( session->ng );
+    srp_ng_delete( session->ng );
     free(session);
 }
 
@@ -744,8 +746,8 @@ void srp_create_salted_verification_key1( SRPSession *session,
     *bytes_v = (const unsigned char *) malloc( *len_v );
 
     if (!*bytes_s || !*bytes_v) {
-        if (*bytes_s) free(*bytes_s); 
-        if (*bytes_v) free(*bytes_v); 
+        if (*bytes_s) free((void*)(*bytes_s)); 
+        if (*bytes_v) free((void*)(*bytes_v)); 
 		*bytes_s=NULL;
 		*bytes_v=NULL;
         goto cleanup_and_exit;
@@ -868,7 +870,7 @@ SRPVerifier *  srp_verifier_new1( SRPSession *session,
 		int temp_keys;
 		if (keys==NULL) {
 			temp_keys=1;
-			keys=srp_new_keypair(session,bytes_v,len_v,bytes_B,len_B);
+			keys=srp_keypair_new(session,bytes_v,len_v,bytes_B,len_B);
 			if (keys==NULL) goto cleanup_and_exit;
 		} else temp_keys=0;
 		/*
@@ -897,7 +899,7 @@ SRPVerifier *  srp_verifier_new1( SRPSession *session,
        calculate_M( session->hash_alg, session->ng, ver->M, username, s, A, keys->B, ver->session_key );
        calculate_H_AMK( session->hash_alg, ver->H_AMK, A, ver->M, ver->session_key );
 
-		if (temp_keys) srp_delete_keypair(keys);
+		if (temp_keys) srp_keypair_delete(keys);
     }
 
  cleanup_and_exit:
@@ -924,7 +926,7 @@ SRPVerifier *  srp_verifier_new1( SRPSession *session,
 
 void srp_verifier_delete( SRPVerifier * ver ){
 	if (ver) {
-		srp_delete_ng( ver->ng );
+		srp_ng_delete( ver->ng );
 		if (ver->username) free( (char *) ver->username );
 		memset(ver, 0, sizeof(*ver));
 		free( ver );
@@ -966,7 +968,7 @@ int srp_verifier_verify_session( SRPVerifier * ver, const unsigned char * user_M
     {
         ver->authenticated = 1;
         if (bytes_HAMK) *bytes_HAMK = ver->H_AMK;
-		return 1
+		return 1;
     }
     else {
         if (bytes_HAMK) *bytes_HAMK = NULL;
@@ -984,7 +986,7 @@ SRPUser * srp_user_new(
 	SRPSession *session, const char * username,
 	const unsigned char * bytes_password, int len_password
 ) {
-	NGConstant *ng=srp_new_ng1(session->ng);
+	NGConstant *ng=srp_ng_new1(session->ng);
 	if (!ng) return 0;
 	//srp_user_new1 takse ownership of ng
 	return srp_user_new1(session->hash_alg,ng, username,bytes_password,len_password);
@@ -1060,7 +1062,7 @@ void srp_user_delete( SRPUser * usr )
       mbedtls_mpi_free( usr->A );
       mbedtls_mpi_free( usr->S );
 
-      srp_delete_ng( usr->ng );
+      srp_ng_delete( usr->ng );
 
       memset((void*)usr->password, 0, usr->password_len);
 
