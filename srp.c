@@ -954,6 +954,9 @@ const unsigned char * srp_verifier_get_session_key( SRPVerifier * ver, int * key
     return ver->session_key;
 }
 
+int srp_session_get_key_length( SRPSession * ses ){
+	return hash_length( ses->hash_alg );
+}
 
 int srp_verifier_get_session_key_length( SRPVerifier * ver )
 {

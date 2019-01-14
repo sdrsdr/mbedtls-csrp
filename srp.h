@@ -148,6 +148,8 @@ SRPSession * srp_session_new( SRP_HashAlgorithm alg,
                                      SRP_NGType ng_type,
                                      const char * n_hex, const char * g_hex);
 
+int srp_session_get_key_length( SRPSession * ses );
+
 void srp_session_delete(SRPSession *session);
 
 /* Out: bytes_s, len_s, bytes_v, len_v
