@@ -243,18 +243,22 @@ static NGHex global_Ng_constants[] = {
 NGConstant * srp_ng_new( SRP_NGType ng_type, const char * n_hex, const char * g_hex )
 {
     NGConstant * ng   = (NGConstant *) malloc( sizeof(NGConstant) );
-    if( !ng || !ng->N || !ng->g )
+    if( !ng )
        return 0;
 
     ng->N = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
     ng->g = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
-    mbedtls_mpi_init(ng->N);
-    mbedtls_mpi_init(ng->g);
 
     if( !ng->N || !ng->g ) {
+		if (ng->N) free(ng->N);
+		if (ng->g) free(ng->g);
 		free(ng);
 		return 0;
 	}
+
+    mbedtls_mpi_init(ng->N);
+    mbedtls_mpi_init(ng->g);
+
 
     if ( ng_type != SRP_NG_CUSTOM )
     {
@@ -278,10 +282,14 @@ NGConstant * srp_ng_new1( NGConstant * copy_from_ng)
     ng->N = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
     ng->g = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
 
-    if( !ng || !ng->N || !ng->g ) {
+    if( !ng->N || !ng->g ) {
+		if (ng->N) free(ng->N);
+		if (ng->g) free(ng->g);
 		free(ng);
 		return 0;
 	}
+    mbedtls_mpi_init(ng->N);
+    mbedtls_mpi_init(ng->g);
 
 	if(!(mbedtls_mpi_copy(ng->N,copy_from_ng->N)==0  && mbedtls_mpi_copy(ng->g,copy_from_ng->g)==0)){
 		srp_ng_delete(ng);
@@ -716,17 +724,25 @@ void srp_create_salted_verification_key1( SRPSession *session,
 
 	*bytes_s=NULL;
 	*bytes_v=NULL;
-    BIGNUM     * s;
-    BIGNUM     * v;
-    BIGNUM     * x   = 0;
+	if( !session) return;
+
+    BIGNUM     * s=NULL;
+    BIGNUM     * v=NULL;
+    BIGNUM     * x=NULL;
 
     s = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
-    mbedtls_mpi_init(s);
-    v = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
-    mbedtls_mpi_init(v);
+	if (s) {
+	    mbedtls_mpi_init(s);
+	} else {
+		goto cleanup_and_exit;
+	}
 
-    if( !session || !s || !v )
-       goto cleanup_and_exit;
+    v = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
+    if( v ){
+	    mbedtls_mpi_init(v);
+	} else {
+		goto cleanup_and_exit;
+	}
 
     mbedtls_mpi_fill_random( s, len_s,
                      &mbedtls_ctr_drbg_random,
@@ -757,12 +773,20 @@ void srp_create_salted_verification_key1( SRPSession *session,
     mbedtls_mpi_write_binary( v, (unsigned char *)*bytes_v, *len_v );
 
  cleanup_and_exit:
-    mbedtls_mpi_free(s);
-    free(s);
-    mbedtls_mpi_free(v);
-    free(v);
-    mbedtls_mpi_free(x);
-    free(x);
+	if (s) {
+    	mbedtls_mpi_free(s);
+    	free(s);
+	}
+
+    if (v) {
+		mbedtls_mpi_free(v);
+    	free(v);
+	}
+
+    if (x) {
+		mbedtls_mpi_free(x);
+	    free(x);
+	}
     //TODO: BN_CTX_free(ctx);
 }
 
