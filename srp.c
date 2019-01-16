@@ -1289,8 +1289,11 @@ void  srp_user_process_challenge( SRPUser * usr,
 }
 
 
-void srp_user_verify_session( SRPUser * usr, const unsigned char * bytes_HAMK )
+int srp_user_verify_session( SRPUser * usr, const unsigned char * bytes_HAMK )
 {
-    if ( memcmp( usr->H_AMK, bytes_HAMK, hash_length(usr->hash_alg) ) == 0 )
+    if ( memcmp( usr->H_AMK, bytes_HAMK, hash_length(usr->hash_alg) ) == 0 ) {
         usr->authenticated = 1;
+		return 1;
+	}
+	return 0;
 }

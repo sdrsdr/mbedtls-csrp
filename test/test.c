@@ -31,12 +31,31 @@ int main(){
 	srp_user_start_authentication (usr,NULL,&usr_pubkey,&usr_pubkey_len);
 	printf ("user_pubkey        @ %p pk len:%d\n",usr_pubkey,usr_pubkey_len);
 
-	//MIX AND MATCH:
+	//MIX AND MATCH @ client:
 	const unsigned char *usr_proof; int usr_proof_len;
 	srp_user_process_challenge (usr,serv_salt,serv_salt_len,server_pubkey,server_pubkey_len,&usr_proof,&usr_proof_len);
 	printf ("user_proof         @ %p len:%d\n",usr_proof,usr_proof_len);
 
-	srp_verifier_new1 (serv_ses,USERNAME,0,serv_salt,serv_salt_len,serv_ver,serv_ver_len,usr_pubkey,usr_pubkey_len,NULL,NULL,server_keys);
+	//MIX AND MATCH @ server:
+	SRPVerifier *ver= srp_verifier_new1 (serv_ses,USERNAME,0,serv_salt,serv_salt_len,serv_ver,serv_ver_len,usr_pubkey,usr_pubkey_len,NULL,NULL,server_keys);
+	printf ("ver                @ %p\n",ver);
+	if (ver==NULL) return -4;
+
+	//verify at server:
+	const unsigned char *svr_proof; 
+	if (srp_verifier_verify_session (ver,usr_proof, &svr_proof)) {
+		printf ("Server verified the session proof @ %p \n",svr_proof);
+	} else {
+		printf ("Server failed to verified the session!\n");
+		return -5;
+	}
+
+	if (srp_user_verify_session(usr,svr_proof)) {
+		printf ("Client verified the session!\n");
+	} else{
+		printf ("Client failed to verified the session!\n");
+		return -6;
+	}
 
 
 	srp_keypair_delete(server_keys);

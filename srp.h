@@ -271,7 +271,7 @@ void                  srp_user_process_challenge( SRPUser * usr,
                                                   const unsigned char ** bytes_M, int * len_M );
 
 /* bytes_HAMK must be exactly srp_user_get_session_key_length() bytes in size */
-void                  srp_user_verify_session(SRPUser * usr, const unsigned char * bytes_HAMK );
+int                  srp_user_verify_session(SRPUser * usr, const unsigned char * bytes_HAMK );
 
 #endif /* Include Guard */
 #ifdef __cplusplus
