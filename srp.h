@@ -93,7 +93,8 @@ typedef enum
 	SRP_NG_3072,
     SRP_NG_4096,
     SRP_NG_8192,
-    SRP_NG_CUSTOM
+    SRP_NG_CUSTOM,
+	SRP_NG_LAST
 } SRP_NGType;
 
 typedef enum
@@ -102,7 +103,8 @@ typedef enum
     SRP_SHA224,
     SRP_SHA256,
     SRP_SHA384,
-    SRP_SHA512
+    SRP_SHA512,
+    SRP_SHA_LAST
 } SRP_HashAlgorithm;
 
 /* This library will automatically seed the mbedtls random number generator.

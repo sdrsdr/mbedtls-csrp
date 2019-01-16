@@ -110,7 +110,6 @@ struct SRPUser
     BIGNUM *A;
     BIGNUM *S;
 
-    const unsigned char * bytes_A;
     int                   authenticated;
 
     const char *          username;
@@ -242,16 +241,20 @@ static NGHex global_Ng_constants[] = {
 
 NGConstant * srp_ng_new( SRP_NGType ng_type, const char * n_hex, const char * g_hex )
 {
+	if ((unsigned)ng_type>=(unsigned)SRP_NG_LAST) return NULL;
+
     NGConstant * ng   = (NGConstant *) malloc( sizeof(NGConstant) );
     if( !ng )
-       return 0;
+       return NULL;
 
     ng->N = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
+	if (!ng->N) { 
+		free(ng); 
+		return NULL;
+	}
     ng->g = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
-
-    if( !ng->N || !ng->g ) {
-		if (ng->N) free(ng->N);
-		if (ng->g) free(ng->g);
+    if( !ng->g ) {
+		free(ng->N);
 		free(ng);
 		return 0;
 	}
@@ -669,14 +672,23 @@ SRPSession * srp_session_new( SRP_HashAlgorithm alg,
                                      SRP_NGType ng_type,
                                      const char * n_hex, const char * g_hex)
 {
+	if ((unsigned)alg>=(unsigned)SRP_SHA_LAST) return NULL;
+	if ((unsigned)ng_type>=(unsigned)SRP_NG_LAST) return NULL;
+
     SRPSession * session;
 
     session = (SRPSession *)malloc(sizeof(SRPSession));
+
+	if (!session) return NULL;
+
     memset(session, 0, sizeof(SRPSession));
 
     session->hash_alg = alg;
     session->ng  = srp_ng_new( ng_type, n_hex, g_hex );
-
+	if (!session->ng) {
+		free(session);
+		return NULL;
+	}
     init_random(); /* Only happens once */
 
     return session;
@@ -755,19 +767,20 @@ void srp_create_salted_verification_key1( SRPSession *session,
 
     mbedtls_mpi_exp_mod(v, session->ng->g, x, session->ng->N, RR);
 
-    //*len_s   = mbedtls_mpi_size(s);
-    *len_v   = mbedtls_mpi_size(v);
-
     *bytes_s = (const unsigned char *) malloc( len_s );
-    *bytes_v = (const unsigned char *) malloc( *len_v );
+	if (*bytes_s==NULL) {
+		 goto cleanup_and_exit;
+	}
 
-    if (!*bytes_s || !*bytes_v) {
-        if (*bytes_s) free((void*)(*bytes_s)); 
-        if (*bytes_v) free((void*)(*bytes_v)); 
+    *len_v   = mbedtls_mpi_size(v);
+    *bytes_v = (const unsigned char *) malloc( *len_v );
+	if (*bytes_v==NULL) {
+		free((void*)(*bytes_s));
 		*bytes_s=NULL;
-		*bytes_v=NULL;
-        goto cleanup_and_exit;
-    }
+		 goto cleanup_and_exit;
+	}
+
+
 
     mbedtls_mpi_write_binary( s, (unsigned char *)*bytes_s, len_s );
     mbedtls_mpi_write_binary( v, (unsigned char *)*bytes_v, *len_v );
@@ -1014,7 +1027,7 @@ SRPUser * srp_user_new(
 	const unsigned char * bytes_password, int len_password
 ) {
 	NGConstant *ng=srp_ng_new1(session->ng);
-	if (!ng) return 0;
+	if (!ng) return NULL;
 	//srp_user_new1 takse ownership of ng
 	return srp_user_new1(session->hash_alg,ng, username,bytes_password,len_password);
 }
@@ -1024,84 +1037,94 @@ SRPUser * srp_user_new1(
 	SRP_HashAlgorithm  hash_alg, NGConstant *ng,
 	const char * username, const unsigned char * bytes_password, int len_password
 ) {
-    SRPUser  *usr  = (SRPUser *) malloc( sizeof(SRPUser) );
-    int              ulen = strlen(username) + 1;
 
-    if (!usr)
-       goto err_exit;
+	if ((unsigned)hash_alg>=(unsigned)SRP_SHA_LAST) return NULL;
+	if (ng==NULL) return NULL;
 
-    usr->hash_alg = hash_alg;
-    usr->ng       = ng;
+	SRPUser  *usr  = (SRPUser *) malloc( sizeof(SRPUser) );
+	int ulen = strlen(username) + 1;
 
-    usr->a = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
-    usr->A = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
-    usr->S = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
+	if (!usr) goto err_exit;
+	memset(usr,0,sizeof(SRPUser));
 
-    mbedtls_mpi_init(usr->a);
-    mbedtls_mpi_init(usr->A);
-    mbedtls_mpi_init(usr->S);
 
-    if (!usr->ng || !usr->a || !usr->A || !usr->S)
-       goto err_exit;
+	usr->hash_alg = hash_alg;
+	usr->ng       = ng;
 
-    usr->username     = (const char *) malloc(ulen);
-    usr->password     = (const unsigned char *) malloc(len_password);
-    usr->password_len = len_password;
+	usr->a = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
+	if (!usr->a) goto err_exit;
+	mbedtls_mpi_init(usr->a);
 
-    if (!usr->username || !usr->password)
-       goto err_exit;
+	usr->A = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
+	if (!usr->A) goto err_exit;
+	mbedtls_mpi_init(usr->A);
 
-    memcpy((char *)usr->username, username,       ulen);
-    memcpy((char *)usr->password, bytes_password, len_password);
+	usr->S = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
+	if (!usr->S) goto err_exit;
+	mbedtls_mpi_init(usr->S);
 
-    usr->authenticated = 0;
+	usr->username     = (const char *) malloc(ulen);
+	if (!usr->username) goto err_exit;
+	memcpy((char *)usr->username, username, ulen);
 
-    usr->bytes_A = 0;
+	usr->password_len = len_password;
+	usr->password = (const unsigned char *) malloc(len_password);
+	if (!usr->password) goto err_exit;
+	memcpy((char *)usr->password, bytes_password, len_password);
 
-    return usr;
+	usr->authenticated = 0;
 
- err_exit:
-    if (usr)
-    {
-       mbedtls_mpi_free(usr->a);
-       mbedtls_mpi_free(usr->A);
-       mbedtls_mpi_free(usr->S);
-       if (usr->username)
-          free((void*)usr->username);
-       if (usr->password)
-       {
-          memset((void*)usr->password, 0, usr->password_len);
-          free((void*)usr->password);
-       }
-       free(usr);
-    }
+	return usr;
 
-    return 0;
+err_exit:
+	if (usr) {
+		if (usr->a) {
+			mbedtls_mpi_free(usr->a);
+			free(usr->a);
+		}
+
+		if (usr->A) {
+			mbedtls_mpi_free(usr->A);
+			free(usr->A);
+		}
+		if (usr->S) {
+			mbedtls_mpi_free(usr->S);
+			free(usr->S);
+		}
+		if (usr->ng) srp_ng_delete(usr->ng);
+		if (usr->username) {
+			memset((void*)usr->username, 0, ulen);
+			free((void*)usr->username);
+		}
+		if (usr->password) {
+			memset((void*)usr->password, 0, usr->password_len);
+			free((void*)usr->password);
+		}
+		free(usr);
+	}
+
+	return 0;
 }
 
 
 
 void srp_user_delete( SRPUser * usr )
 {
-   if( usr )
-   {
-      mbedtls_mpi_free( usr->a );
-      mbedtls_mpi_free( usr->A );
-      mbedtls_mpi_free( usr->S );
+	if( !usr ) return;
+	mbedtls_mpi_free( usr->a ); free( usr->a );
+	mbedtls_mpi_free( usr->A ); free( usr->A );
+	mbedtls_mpi_free( usr->S ); free( usr->S );
+	
+	srp_ng_delete( usr->ng );
 
-      srp_ng_delete( usr->ng );
+	memset((void*)usr->password, 0, usr->password_len);
 
-      memset((void*)usr->password, 0, usr->password_len);
+	free((char *)usr->username);
+	free((char *)usr->password);
 
-      free((char *)usr->username);
-      free((char *)usr->password);
 
-      if (usr->bytes_A)
-         free( (char *)usr->bytes_A );
-
-      memset(usr, 0, sizeof(*usr));
-      free( usr );
-   }
+	memset(usr, 0, sizeof(SRPUser));
+	free( usr );
 }
 
 
@@ -1139,24 +1162,21 @@ void  srp_user_start_authentication( SRPUser * usr, const char ** username,
                                      const unsigned char ** bytes_A, int * len_A )
 {
 
-    mbedtls_mpi_fill_random( usr->a, 256, &mbedtls_ctr_drbg_random, &ctr_drbg_ctx);
-    mbedtls_mpi_exp_mod(usr->A, usr->ng->g, usr->a, usr->ng->N, RR);
+	mbedtls_mpi_fill_random( usr->a, 256, &mbedtls_ctr_drbg_random, &ctr_drbg_ctx);
+	mbedtls_mpi_exp_mod(usr->A, usr->ng->g, usr->a, usr->ng->N, RR);
 
-    *len_A   = mbedtls_mpi_size(usr->A);
-    *bytes_A = malloc( *len_A );
+	*len_A   = mbedtls_mpi_size(usr->A);
+	*bytes_A = malloc( *len_A );
 
-    if (!*bytes_A)
-    {
-       *len_A = 0;
-       *bytes_A = 0;
-       *username = 0;
-       return;
-    }
+	if (!*bytes_A) {
+		*len_A = 0;
+		if (username) *username = NULL;
+		return;
+	}
 
-    mbedtls_mpi_write_binary( usr->A, (unsigned char *) *bytes_A, *len_A );
+	mbedtls_mpi_write_binary( usr->A, (unsigned char *) *bytes_A, *len_A );
 
-    usr->bytes_A = *bytes_A;
-    *username = usr->username;
+	if (username) *username = usr->username;
 }
 
 
@@ -1166,41 +1186,46 @@ void  srp_user_process_challenge( SRPUser * usr,
                                   const unsigned char * bytes_B, int len_B,
                                   const unsigned char ** bytes_M, int * len_M )
 {
-    BIGNUM *u    = 0;
-    BIGNUM *x    = 0;
-    BIGNUM *k    = 0;
+    BIGNUM *u = NULL;
+    BIGNUM *x = NULL;
+    BIGNUM *k = NULL;
 
-    BIGNUM *s;
+    BIGNUM *s = NULL;
+    BIGNUM *B = NULL;
+    BIGNUM *v = NULL;
+    BIGNUM *tmp1 = NULL;
+    BIGNUM *tmp2 = NULL;
+    BIGNUM *tmp3 = NULL;
+    *len_M = 0;
+    *bytes_M = NULL;
+
     s = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
+    if( !s ) goto cleanup_and_exit;
     mbedtls_mpi_init(s);
     mbedtls_mpi_read_binary(s, bytes_s, len_s);
 
-    BIGNUM *B;
     B = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
+    if( !B ) goto cleanup_and_exit;
     mbedtls_mpi_init(B);
     mbedtls_mpi_read_binary(B, bytes_B, len_B);
 
-    BIGNUM *v;
     v = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
+    if(  !v ) goto cleanup_and_exit;
     mbedtls_mpi_init(v);
 
-    BIGNUM *tmp1;
     tmp1 = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
+    if(  !tmp1 ) goto cleanup_and_exit;
     mbedtls_mpi_init(tmp1);
 
-    BIGNUM *tmp2;
     tmp2 = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
+    if(  !tmp2 ) goto cleanup_and_exit;
     mbedtls_mpi_init(tmp2);
 
-    BIGNUM *tmp3;
     tmp3 = (mbedtls_mpi *) malloc(sizeof(mbedtls_mpi));
+    if(  !tmp3 ) goto cleanup_and_exit;
     mbedtls_mpi_init(tmp3);
 
-    *len_M = 0;
-    *bytes_M = 0;
 
-    if( !s || !B || !v || !tmp1 || !tmp2 || !tmp3 )
-       goto cleanup_and_exit;
 
     u = H_nn(usr->hash_alg, usr->A, B);
 
@@ -1241,37 +1266,26 @@ void  srp_user_process_challenge( SRPUser * usr,
         calculate_H_AMK( usr->hash_alg, usr->H_AMK, usr->A, usr->M, usr->session_key );
 
         *bytes_M = usr->M;
-        if (len_M) {
-            *len_M = hash_length( usr->hash_alg );
-        }
+        *len_M = hash_length( usr->hash_alg );
+        
     }
     else
     {
         *bytes_M = NULL;
-        if (len_M)
-            *len_M   = 0;
+        if (len_M) *len_M   = 0;
     }
 
  cleanup_and_exit:
 
-    mbedtls_mpi_free(s);
-    mbedtls_mpi_free(B);
-    mbedtls_mpi_free(u);
-    mbedtls_mpi_free(x);
-    mbedtls_mpi_free(k);
-    mbedtls_mpi_free(v);
-    mbedtls_mpi_free(tmp1);
-    mbedtls_mpi_free(tmp2);
-    mbedtls_mpi_free(tmp3);
-    free(s);
-    free(B);
-    free(u);
-    free(x);
-    free(k);
-    free(v);
-    free(tmp1);
-    free(tmp2);
-    free(tmp3);
+    if (s) { mbedtls_mpi_free(s); free(s);}
+    if (B) { mbedtls_mpi_free(B); free(B);}
+    if (u) { mbedtls_mpi_free(u); free(u);}
+    if (x) { mbedtls_mpi_free(x); free(x);}
+    if (k) { mbedtls_mpi_free(k); free(k);}
+    if (v) { mbedtls_mpi_free(v); free(v);}
+    if (tmp1) { mbedtls_mpi_free(tmp1);free(tmp1);}
+    if (tmp2) { mbedtls_mpi_free(tmp2);free(tmp2);}
+    if (tmp3) { mbedtls_mpi_free(tmp3);free(tmp3);}
 }
 
 

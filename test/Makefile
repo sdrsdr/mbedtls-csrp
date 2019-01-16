@@ -15,10 +15,10 @@ mbedtls/library/libmbedcrypto.a: mbedtls
 	cd mbedtls && make no_test
 
 srp.o: mbedtls ../srp.c
-	$(CC) ../srp.c -c -o srp.o  -I../ -I./mbedtls/include $(CFLAGS)
+	$(CC) `realpath -s ../srp.c` -c -o srp.o  -I../ -I./mbedtls/include $(CFLAGS)
 
 test.o: test.c
-	$(CC) test.c -c -o test.o  -I../  $(CFLAGS)
+	$(CC) `realpath -s test.c` -c -o test.o  -I../  $(CFLAGS)
 
 test: mbedtls/library/libmbedcrypto.a srp.o test.o
 	$(CC) srp.o test.o -o test  -Lmbedtls/library/ -lmbedcrypto $(LDFLAGS)
