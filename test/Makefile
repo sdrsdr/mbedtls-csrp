@@ -1,4 +1,4 @@
-default: build
+default: test
 
 .PHONY: clean distclean
 .ONESHELL:
@@ -6,7 +6,6 @@ default: build
 CFLAGS ?= -g -Og
 LDFLAGS ?= -g
 
-build: mbedtls mbedtls/library/libmbedcrypto.a test
 
 mbedtls:
 	git clone https://github.com/ARMmbed/mbedtls.git
@@ -14,14 +13,18 @@ mbedtls:
 mbedtls/library/libmbedcrypto.a: mbedtls
 	cd mbedtls && make no_test
 
-srp.o: mbedtls ../srp.c
-	$(CC) `realpath -s ../srp.c` -c -o srp.o  -I../ -I./mbedtls/include $(CFLAGS)
+srp.o: ../srp.c mbedtls
+	$(CC) `realpath -s ../srp.c` -c -o srp.o  -I../ -I./mbedtls/include $(CFLAGS) -DHAPTEST
 
-test.o: test.c
+tutils.o: tutils.c mbedtls
+	$(CC) `realpath -s tutils.c` -c -o tutils.o  -I../ -I./mbedtls/include $(CFLAGS)
+
+
+test.o: test.c mbedtls
 	$(CC) `realpath -s test.c` -c -o test.o  -I../  $(CFLAGS)
 
-test: mbedtls/library/libmbedcrypto.a srp.o test.o
-	$(CC) srp.o test.o -o test  -Lmbedtls/library/ -lmbedcrypto $(LDFLAGS)
+test: mbedtls/library/libmbedcrypto.a srp.o test.o tutils.o
+	$(CC) $^ -o $@  -Lmbedtls/library/ -lmbedcrypto $(LDFLAGS)
 
 clean:
 	rm *.o test 
