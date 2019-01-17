@@ -58,6 +58,9 @@ static mbedtls_entropy_context entropy_ctx;
 static mbedtls_ctr_drbg_context ctr_drbg_ctx;
 static mbedtls_mpi * RR;
 
+#define SRP_BITS_IN_PRIVKEY 256
+#define SRP_BYTES_IN_PRIVKEY (SRP_BITS_IN_PRIVKEY/8)
+
 struct NGConstant {
     BIGNUM     *N;
     BIGNUM     *g;
@@ -121,7 +124,7 @@ struct SRPUser
     unsigned char session_key [SHA512_DIGEST_LENGTH];
 };
 
-static BIGNUM * H_nn( SRP_HashAlgorithm alg, const BIGNUM * n1, const BIGNUM * n2 );
+static BIGNUM * H_nn( SRP_HashAlgorithm alg, const BIGNUM * n1, const BIGNUM * n2,int do_pad );
 
 
 
@@ -359,11 +362,11 @@ SRPKeyPair * srp_keypair_new(SRPSession *session,const unsigned char * bytes_v, 
     mbedtls_mpi_init(keys->b);
 
 
-	mbedtls_mpi_fill_random( keys->b, 256,
+	mbedtls_mpi_fill_random( keys->b, SRP_BYTES_IN_PRIVKEY,
                      &mbedtls_ctr_drbg_random,
                      &ctr_drbg_ctx );
 
-	k = H_nn(session->hash_alg, session->ng->N, session->ng->g);
+	k = H_nn(session->hash_alg, session->ng->N, session->ng->g,1);
 
 	/* B = kv + g^b */
 	mbedtls_mpi_mul_mpi( tmp1, k, v);
@@ -503,18 +506,24 @@ int srp_hash_length( SRPSession *ses ) {
 	return hash_length(ses->hash_alg);
 }
 
-static BIGNUM * H_nn( SRP_HashAlgorithm alg, const BIGNUM * n1, const BIGNUM * n2 )
+static BIGNUM * H_nn( SRP_HashAlgorithm alg, const BIGNUM * n1, const BIGNUM * n2,int do_pad )
 {
     unsigned char   buff[ SHA512_DIGEST_LENGTH ];
     int             len_n1 = mbedtls_mpi_size(n1);
     int             len_n2 = mbedtls_mpi_size(n2);
-    int             nbytes = len_n1 + len_n2;
+	int             nbytes = len_n1 + len_n2;
+	int kldiff;
+	if (do_pad) {
+		kldiff= len_n1 - len_n2;
+		if (kldiff<0) return 0;
+		nbytes +=kldiff;
+	} else kldiff=0;
     unsigned char * bin    = (unsigned char *) malloc( nbytes );
     if (!bin)
        return 0;
-
+	if (kldiff) memset(bin+len_n1,0,kldiff);
     mbedtls_mpi_write_binary( n1, bin, len_n1 );
-    mbedtls_mpi_write_binary( n2, bin+len_n1, len_n2 );
+    mbedtls_mpi_write_binary( n2, bin+len_n1+kldiff, len_n2 );
     hash( alg, bin, nbytes, buff );
     free(bin);
     BIGNUM * bn;
@@ -911,7 +920,7 @@ SRPVerifier *  srp_verifier_new1( SRPSession *session,
 			if (keys==NULL) goto cleanup_and_exit;
 		} else temp_keys=0;
 		/*
-        mbedtls_mpi_fill_random( b, 256,
+        mbedtls_mpi_fill_random( b, SRP_BYTES_IN_PRIVKEY,
                      &mbedtls_ctr_drbg_random,
                      &ctr_drbg_ctx );
 
@@ -924,7 +933,7 @@ SRPVerifier *  srp_verifier_new1( SRPSession *session,
        //mbedtls_mpi_mod_mpi( B, tmp1, session->ng->N );
 		*/
 
-       u = H_nn(session->hash_alg, A, keys->B);
+       u = H_nn(session->hash_alg, A, keys->B,1); 
 
        /* S = (A *(v^u)) ^ b */
        mbedtls_mpi_exp_mod(tmp1, v, u, session->ng->N, RR);
@@ -1162,7 +1171,7 @@ void  srp_user_start_authentication( SRPUser * usr, const char ** username,
                                      const unsigned char ** bytes_A, int * len_A )
 {
 
-	mbedtls_mpi_fill_random( usr->a, 256, &mbedtls_ctr_drbg_random, &ctr_drbg_ctx);
+	mbedtls_mpi_fill_random( usr->a, SRP_BYTES_IN_PRIVKEY, &mbedtls_ctr_drbg_random, &ctr_drbg_ctx);
 	mbedtls_mpi_exp_mod(usr->A, usr->ng->g, usr->a, usr->ng->N, RR);
 
 	*len_A   = mbedtls_mpi_size(usr->A);
@@ -1227,7 +1236,7 @@ void  srp_user_process_challenge( SRPUser * usr,
 
 
 
-    u = H_nn(usr->hash_alg, usr->A, B);
+    u = H_nn(usr->hash_alg, usr->A, B,1);
 
     if (!u)
        goto cleanup_and_exit;
@@ -1237,7 +1246,7 @@ void  srp_user_process_challenge( SRPUser * usr,
     if (!x)
        goto cleanup_and_exit;
 
-    k = H_nn(usr->hash_alg, usr->ng->N, usr->ng->g);
+    k = H_nn(usr->hash_alg, usr->ng->N, usr->ng->g,1);
 
     if (!k)
        goto cleanup_and_exit;
