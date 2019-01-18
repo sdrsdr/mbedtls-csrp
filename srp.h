@@ -76,7 +76,6 @@ extern "C" {
 #define SHA256_DIGEST_LENGTH 32
 #define SHA384_DIGEST_LENGTH 48
 #define SHA512_DIGEST_LENGTH 64
-#define BIGNUM	mbedtls_mpi
 
 typedef struct SRPSession SRPSession;
 typedef struct SRPKeyPair SRPKeyPair;

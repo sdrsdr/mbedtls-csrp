@@ -3,21 +3,25 @@
 #include <string.h>
 
 #include "srp.h"
-#define USERNAME "test-mest"
-#define PASSWORD "secret-mecret"
+#include "srp_internal.h"
+#include "tutils.h"
+
+#define USERNAME "alice"
+#define PASSWORD "password123"
 
 int main(){
 	SRPSession *serv_ses=srp_session_new(SRP_SHA512,SRP_NG_3072, NULL,NULL);
 	printf ("SRPSession created @ %p\n",serv_ses);
 	if (serv_ses==NULL) return -1;
+	tutils_mpi_print("N",serv_ses->ng->N);
+	tutils_mpi_print("g",serv_ses->ng->g);
 
 	const unsigned char *serv_salt; int serv_salt_len=16;
 	const unsigned char *serv_ver; int serv_ver_len;
 	const unsigned char *server_pubkey; int server_pubkey_len;
 	int PASSWORD_len=strlen(PASSWORD);
 	srp_create_salted_verification_key1(serv_ses,USERNAME,PASSWORD,PASSWORD_len,&serv_salt,serv_salt_len,&serv_ver,&serv_ver_len);
-	printf ("server_verifier    @ %p len:%d\n",serv_ver,serv_ver_len);
-	printf ("server_salt        @ %p len:%d\n",serv_salt,serv_salt_len);
+
 	if (serv_salt==NULL || serv_ver==NULL) return -2;
 
 	SRPKeyPair *server_keys=srp_keypair_new(serv_ses,serv_ver,serv_ver_len,&server_pubkey,&server_pubkey_len);

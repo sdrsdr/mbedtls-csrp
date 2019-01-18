@@ -3,9 +3,9 @@ default: test
 .PHONY: clean distclean
 .ONESHELL:
 
-CFLAGS ?= -g -Og
+CFLAGS ?= -g -Og -DSRP_TEST
 LDFLAGS ?= -g
-
+HDRS = tutils.h ../srp_internal.h srp_test_config.h
 
 mbedtls:
 	git clone https://github.com/ARMmbed/mbedtls.git
@@ -13,15 +13,15 @@ mbedtls:
 mbedtls/library/libmbedcrypto.a: mbedtls
 	cd mbedtls && make no_test
 
-srp.o: ../srp.c mbedtls
-	$(CC) `realpath -s ../srp.c` -c -o srp.o  -I../ -I./mbedtls/include $(CFLAGS) -DHAPTEST
+srp.o: ../srp.c mbedtls $(HDRS)
+	$(CC) `realpath -s $< ` -c -o $@  -I`realpath -s .` -I./mbedtls/include $(CFLAGS)
 
-tutils.o: tutils.c mbedtls
-	$(CC) `realpath -s tutils.c` -c -o tutils.o  -I../ -I./mbedtls/include $(CFLAGS)
+tutils.o: tutils.c mbedtls $(HDRS)
+	$(CC) `realpath -s $< ` -c -o $@  -I../ -I./mbedtls/include $(CFLAGS)
 
 
-test.o: test.c mbedtls
-	$(CC) `realpath -s test.c` -c -o test.o  -I../  $(CFLAGS)
+test.o: test.c mbedtls $(HDRS)
+	$(CC) `realpath -s $< ` -c -o $@  -I../ -I./mbedtls/include $(CFLAGS)
 
 test: mbedtls/library/libmbedcrypto.a srp.o test.o tutils.o
 	$(CC) $^ -o $@  -Lmbedtls/library/ -lmbedcrypto $(LDFLAGS)

@@ -1,4 +1,4 @@
 #pragma once
 #include "mbedtls/bignum.h"
-void tutils_array_print(char* tag, unsigned char* buf, int len);
-void tutils_mpi_print(char* tag, mbedtls_mpi* x);
+void tutils_array_print(const char* tag, const unsigned char* buf, int len);
+void tutils_mpi_print(const char* tag, const mbedtls_mpi* x);
