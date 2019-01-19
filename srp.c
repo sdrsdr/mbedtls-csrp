@@ -379,30 +379,37 @@ void srp_keypair_delete( SRPKeyPair * keys ) {
 
 static void hash_init( SRP_HashAlgorithm alg, HashCTX *c )
 {
-    switch (alg)
-    {
-      case SRP_SHA1  : mbedtls_sha1_init( &c->sha );
-      case SRP_SHA256: mbedtls_sha256_init( &c->sha256 );
-      case SRP_SHA512: mbedtls_sha512_init( &c->sha512 );
-      default:
-        return;
-    };
+	switch (alg) {
+		case SRP_SHA1  : {
+			mbedtls_sha1_init( &c->sha );
+			mbedtls_sha1_starts( &c->sha );
+			break;
+		}
+		case SRP_SHA224:
+		case SRP_SHA256: {
+			mbedtls_sha256_init( &c->sha256 );
+			if (alg==SRP_SHA224) {
+				mbedtls_sha256_starts( &c->sha256, 1 );
+			} else {
+				mbedtls_sha256_starts( &c->sha256, 0 );
+			}
+			break;
+		}
+		case SRP_SHA384:
+		case SRP_SHA512:{
+			mbedtls_sha512_init( &c->sha512 );
+			if (alg==SRP_SHA384) {
+				mbedtls_sha512_starts( &c->sha512, 1 );
+			} else {
+				mbedtls_sha512_starts( &c->sha512, 0 );
+			}
+			break;
+		}
+    	default:
+			return;
+	};
 }
-/*
-static void hash_start( SRP_HashAlgorithm alg, HashCTX *c )
-{
-    switch (alg)
-    {
-      case SRP_SHA1  : mbedtls_sha1_starts( &c->sha );
-      case SRP_SHA224: mbedtls_sha256_starts( &c->sha256, 1 );
-      case SRP_SHA256: mbedtls_sha256_starts( &c->sha256, 0 );
-      case SRP_SHA384: mbedtls_sha512_starts( &c->sha512, 1 );
-      case SRP_SHA512: mbedtls_sha512_starts( &c->sha512, 0 );
-      default:
-        return;
-    };
-}
-*/
+
 
 static void hash_update( SRP_HashAlgorithm alg, HashCTX *c, const void *data, size_t len )
 {
